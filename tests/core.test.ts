@@ -114,3 +114,31 @@ test('Outside margin uses only spare width and falls back inline in narrow panes
   state = state.update({ effects: marginSpace.of(120) }).state;
   assert.equal(state.field(field).decorations.size, 3);
 });
+
+test('Active tags can stay in the margin or return inline in both editing scopes', () => {
+  const source = 'Start\n\nOne #one\nContinued #two\n\nOther #three';
+  for (const mode of ['paragraph', 'line'] as const) {
+    let { state, field } = make(source);
+    const settings = { ...DEFAULTS, mode, showInlineWhileEditing: false };
+    state = state.update({ effects: configure.of(settings) }).state;
+    const allInMargin = state.field(field).decorations.size;
+    state = state.update({ selection: { anchor: source.indexOf('Continued') } }).state;
+    assert.equal(state.field(field).decorations.size, allInMargin);
+    state = state.update({ effects: configure.of({ ...settings, showInlineWhileEditing: true }) }).state;
+    assert.ok(state.field(field).decorations.size < allInMargin);
+    state = state.update({ effects: configure.of(settings), selection: { anchor: 0, head: source.length } }).state;
+    assert.equal(state.field(field).decorations.size, allInMargin);
+    assert.equal(state.doc.toString(), source);
+    state = state.update({ effects: marginSpace.of(0) }).state;
+    assert.equal(state.field(field).decorations.size, 0);
+    state = state.update({ effects: [marginSpace.of(220), toggleLP.of(false)] }).state;
+    assert.equal(state.field(field).decorations.size, 0);
+  }
+});
+
+test('Inline editing toggle defaults on for old settings and preserves saved false', () => {
+  assert.equal(sanitizeSettings({ width: 160 }).showInlineWhileEditing, true);
+  const saved = JSON.parse(JSON.stringify({ ...DEFAULTS, showInlineWhileEditing: false }));
+  assert.equal(sanitizeSettings(saved).showInlineWhileEditing, false);
+  assert.equal(sanitizeSettings({ showInlineWhileEditing: 'false' } as any).showInlineWhileEditing, true);
+});

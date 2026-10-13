@@ -1,10 +1,11 @@
 # Margin Tags
 
-An Obsidian plugin inspired by Logseq DB’s tag layout. In Live Preview, tags move to the right margin while you read and return inline when you edit their paragraph.
+An Obsidian plugin inspired by Logseq DB’s tag layout. In Live Preview, tags move to the right margin while you read and, by default, return inline when you edit their paragraph.
 
 ## Features
 
 - Tags appear outside the text column, preserving paragraph width.
+- Toggle **Show tags inline while editing** off to keep tags in the margin even on the active line or paragraph. Turn it on to restore inline editing (the default). Source mode always shows the original tags.
 - Extra tags collapse into an expandable **+N** button.
 - Choose **left-to-right** or **right-to-left** tag priority.
 - Click a tag to open Obsidian’s tag search.

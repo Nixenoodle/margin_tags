@@ -4,15 +4,18 @@ export interface Settings {
   mode: 'paragraph' | 'line';
   width: number;
   enabled: boolean;
+  showInlineWhileEditing: boolean;
   priority: 'left-to-right' | 'right-to-left';
 }
-export const DEFAULTS: Settings = { mode: 'paragraph', width: 200, enabled: true, priority: 'left-to-right' };
+export const DEFAULTS: Settings = { mode: 'paragraph', width: 200, enabled: true, showInlineWhileEditing: true, priority: 'left-to-right' };
 export function sanitizeSettings(raw: Partial<Settings> | null | undefined): Settings {
   return {
     mode: raw?.mode === 'line' ? 'line' : 'paragraph',
     width: typeof raw?.width === 'number' && Number.isFinite(raw.width)
       ? Math.max(80, Math.min(360, Math.round(raw.width))) : DEFAULTS.width,
     enabled: typeof raw?.enabled === 'boolean' ? raw.enabled : true,
+    showInlineWhileEditing: typeof raw?.showInlineWhileEditing === 'boolean'
+      ? raw.showInlineWhileEditing : true,
     priority: raw?.priority === 'right-to-left' ? 'right-to-left' : 'left-to-right',
   };
 }

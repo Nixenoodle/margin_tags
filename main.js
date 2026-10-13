@@ -1,4 +1,4 @@
-/* Margin Tags v0.1.1 | MIT License | See src/ for editable source. */
+/* Margin Tags v0.1.2 | MIT License | See src/ for editable source. */
 "use strict";
 var __defProp = Object.defineProperty;
 var __getOwnPropDesc = Object.getOwnPropertyDescriptor;
@@ -35,12 +35,13 @@ var import_language = require("@codemirror/language");
 var import_view = require("@codemirror/view");
 
 // src/model.ts
-var DEFAULTS = { mode: "paragraph", width: 200, enabled: true, priority: "left-to-right" };
+var DEFAULTS = { mode: "paragraph", width: 200, enabled: true, showInlineWhileEditing: true, priority: "left-to-right" };
 function sanitizeSettings(raw) {
   return {
     mode: raw?.mode === "line" ? "line" : "paragraph",
     width: typeof raw?.width === "number" && Number.isFinite(raw.width) ? Math.max(80, Math.min(360, Math.round(raw.width))) : DEFAULTS.width,
     enabled: typeof raw?.enabled === "boolean" ? raw.enabled : true,
+    showInlineWhileEditing: typeof raw?.showInlineWhileEditing === "boolean" ? raw.showInlineWhileEditing : true,
     priority: raw?.priority === "right-to-left" ? "right-to-left" : "left-to-right"
   };
 }
@@ -140,7 +141,7 @@ function createMarginField(host) {
     const ranges = [];
     const width = Math.min(settings.width, space);
     for (const block of blocks) {
-      if (touchesSelection(block, state.selection)) continue;
+      if (settings.showInlineWhileEditing && touchesSelection(block, state.selection)) continue;
       for (const tag of block.tags) ranges.push(import_view.Decoration.replace({}).range(tag.from, tag.to));
       ranges.push(import_view.Decoration.line({ attributes: {
         class: "margin-tags-line",
@@ -464,11 +465,15 @@ var MarginTagsSettings = class extends import_obsidian.PluginSettingTab {
   display() {
     this.containerEl.empty();
     this.containerEl.createEl("h2", { text: "Margin Tags" });
-    new import_obsidian.Setting(this.containerEl).setName("Enable margin tags").setDesc("Show tags in a right-hand lane in Live Preview while their paragraph is inactive.").addToggle((toggle) => toggle.setValue(this.plugin.settings.enabled).onChange(async (enabled) => {
+    new import_obsidian.Setting(this.containerEl).setName("Enable margin tags").setDesc("Show tags in a right-hand lane in Live Preview.").addToggle((toggle) => toggle.setValue(this.plugin.settings.enabled).onChange(async (enabled) => {
       this.plugin.settings.enabled = enabled;
       await this.plugin.applySettings();
     }));
-    new import_obsidian.Setting(this.containerEl).setName("Editing scope").setDesc("Paragraph restores all tags in the current paragraph or list item. Line restores only the current source line.").addDropdown((dropdown) => dropdown.addOption("paragraph", "Paragraph").addOption("line", "Line").setValue(this.plugin.settings.mode).onChange(async (mode) => {
+    new import_obsidian.Setting(this.containerEl).setName("Show tags inline while editing").setDesc("On: reveal tags inline when the cursor or selection is in their line or paragraph. Off: keep them in the margin. You can edit tag text in Source mode. Tags still stay inline if there is no room for a margin.").addToggle((toggle) => toggle.setValue(this.plugin.settings.showInlineWhileEditing).onChange(async (showInlineWhileEditing) => {
+      this.plugin.settings.showInlineWhileEditing = showInlineWhileEditing;
+      await this.plugin.applySettings();
+    }));
+    new import_obsidian.Setting(this.containerEl).setName("Editing scope").setDesc("Group tags by paragraph/list item or source line. This also controls where tags are revealed when Show tags inline while editing is on.").addDropdown((dropdown) => dropdown.addOption("paragraph", "Paragraph").addOption("line", "Line").setValue(this.plugin.settings.mode).onChange(async (mode) => {
       this.plugin.settings.mode = mode === "line" ? "line" : "paragraph";
       await this.plugin.applySettings();
     }));

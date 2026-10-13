@@ -1,5 +1,11 @@
 # Changes
 
+## 0.1.2
+
+- Add **Show tags inline while editing**. On preserves existing behavior; off keeps tags in the margin on active lines, paragraphs, and selections.
+- Preserve the inline fallback when there is insufficient outside margin.
+- Existing settings migrate with the new toggle enabled.
+
 ## 0.1.1
 
 - Move the tag lane outside the text column and remove the width reservation from paragraphs.

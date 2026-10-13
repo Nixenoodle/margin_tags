@@ -65,13 +65,20 @@ class MarginTagsSettings extends PluginSettingTab {
     this.containerEl.empty();
     this.containerEl.createEl('h2', { text: 'Margin Tags' });
     new Setting(this.containerEl).setName('Enable margin tags')
-      .setDesc('Show tags in a right-hand lane in Live Preview while their paragraph is inactive.')
+      .setDesc('Show tags in a right-hand lane in Live Preview.')
       .addToggle(toggle => toggle.setValue(this.plugin.settings.enabled).onChange(async enabled => {
         this.plugin.settings.enabled = enabled;
         await this.plugin.applySettings();
       }));
+    new Setting(this.containerEl).setName('Show tags inline while editing')
+      .setDesc('On: reveal tags inline when the cursor or selection is in their line or paragraph. Off: keep them in the margin. You can edit tag text in Source mode. Tags still stay inline if there is no room for a margin.')
+      .addToggle(toggle => toggle.setValue(this.plugin.settings.showInlineWhileEditing)
+        .onChange(async showInlineWhileEditing => {
+          this.plugin.settings.showInlineWhileEditing = showInlineWhileEditing;
+          await this.plugin.applySettings();
+        }));
     new Setting(this.containerEl).setName('Editing scope')
-      .setDesc('Paragraph restores all tags in the current paragraph or list item. Line restores only the current source line.')
+      .setDesc('Group tags by paragraph/list item or source line. This also controls where tags are revealed when Show tags inline while editing is on.')
       .addDropdown(dropdown => dropdown.addOption('paragraph', 'Paragraph').addOption('line', 'Line')
         .setValue(this.plugin.settings.mode).onChange(async mode => {
           this.plugin.settings.mode = mode === 'line' ? 'line' : 'paragraph';

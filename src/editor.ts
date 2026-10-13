@@ -38,7 +38,7 @@ export function createMarginField(host: Host) {
     const ranges: Range<Decoration>[] = [];
     const width = Math.min(settings.width, space);
     for (const block of blocks) {
-      if (touchesSelection(block, state.selection)) continue;
+      if (settings.showInlineWhileEditing && touchesSelection(block, state.selection)) continue;
       for (const tag of block.tags) ranges.push(Decoration.replace({}).range(tag.from, tag.to));
       ranges.push(Decoration.line({ attributes: {
         class: 'margin-tags-line',
