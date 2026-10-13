@@ -16,6 +16,15 @@ Your Markdown stays unchanged. When there isn’t enough margin space, tags rema
 
 ## Installation
 
+### Using BRAT
+
+1. Install and enable [BRAT](https://github.com/TfTHacker/obsidian42-brat) from **Settings → Community plugins → Browse**.
+2. Open BRAT’s settings and select **Add beta plugin**.
+3. Enter `Nixenoodle/margin_tags`, select the latest release, and confirm the installation.
+4. Enable **Margin Tags** under **Settings → Community plugins** if it is not already enabled.
+
+### Manual installation
+
 1. Create a `margin-tags` folder inside your vault’s `.obsidian/plugins/` directory.
 2. Copy `main.js`, `manifest.json`, and `styles.css` into it.
 3. Restart Obsidian and enable **Margin Tags** under **Settings → Community plugins**.
@@ -31,6 +40,8 @@ npm test
 npm run typecheck
 npm run build
 ```
+
+For BRAT installation and updates, publish a GitHub release with `main.js`, `manifest.json`, and `styles.css` attached as individual release assets. Match the release tag to the version in `manifest.json`.
 
 ## Made with AI
 
