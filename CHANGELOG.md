@@ -1,5 +1,11 @@
 # Changes
 
+## 0.1.3
+
+- Add **Keep inline-field tags inline**, enabled by default. Tags in `key:: value` lines and bracketed fields remain beside their field name.
+- Support field lines within lists, tasks, and blockquotes. Ordinary tags outside field values still move to the margin.
+- Apply the exemption regardless of the cursor-position setting; turning it off restores normal margin behavior for field tags.
+
 ## 0.1.2
 
 - Add **Show tags inline while editing**. On preserves existing behavior; off keeps tags in the margin on active lines, paragraphs, and selections.

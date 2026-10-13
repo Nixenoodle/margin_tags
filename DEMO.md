@@ -32,3 +32,9 @@ Inline code should not become a margin tag: `#not-a-tag`.
 Select across several paragraphs to reveal all their inline tags. Switching to Source mode or disabling Margin Tags should restore normal presentation everywhere.
 
 Priority check: choose Left to right or Right to left in settings. These should display as first → middle → last, or last → middle → first. #first #middle #last
+
+Inline fields stay inline when **Keep inline-field tags inline** is enabled:
+
+tags:: #source/book #status/reading #processing
+
+Ordinary #margin-tag with [status:: #reading] and (topic:: #science).

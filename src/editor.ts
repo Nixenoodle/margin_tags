@@ -1,7 +1,7 @@
 import { StateEffect, StateField, type EditorState, type Range } from '@codemirror/state';
 import { syntaxTree } from '@codemirror/language';
 import { Decoration, EditorView, ViewPlugin, type ViewUpdate, type DecorationSet, type WidgetType } from '@codemirror/view';
-import { collectBlocks, touchesSelection, prioritizeTags, availableMargin, type Block, type Settings, type Tag } from './model';
+import { collectBlocks, touchesSelection, prioritizeTags, availableMargin, inlineFieldRanges, type Block, type Settings, type Tag } from './model';
 
 export const configure = StateEffect.define<Settings>();
 export const marginSpace = StateEffect.define<number>();
@@ -37,14 +37,25 @@ export function createMarginField(host: Host) {
     if (!settings.enabled || !host.isLivePreview(state) || space < 64) return Decoration.none;
     const ranges: Range<Decoration>[] = [];
     const width = Math.min(settings.width, space);
+    const fieldRanges = new Map<number, { from: number; to: number }[]>();
     for (const block of blocks) {
       if (settings.showInlineWhileEditing && touchesSelection(block, state.selection)) continue;
-      for (const tag of block.tags) ranges.push(Decoration.replace({}).range(tag.from, tag.to));
+      const tags = settings.keepInlineFieldTags ? block.tags.filter(tag => {
+        const line = state.doc.lineAt(tag.from);
+        let fields = fieldRanges.get(line.number);
+        if (!fields) {
+          fields = inlineFieldRanges(line.text);
+          fieldRanges.set(line.number, fields);
+        }
+        return !fields.some(field => tag.from >= line.from + field.from && tag.to <= line.from + field.to);
+      }) : block.tags;
+      if (!tags.length) continue;
+      for (const tag of tags) ranges.push(Decoration.replace({}).range(tag.from, tag.to));
       ranges.push(Decoration.line({ attributes: {
         class: 'margin-tags-line',
         style: `--margin-tags-width:${width}px`,
       } }).range(state.doc.line(block.firstLine).from));
-      const names = prioritizeTags(block.tags.map(t => t.text), settings.priority);
+      const names = prioritizeTags(tags.map(t => t.text), settings.priority);
       ranges.push(Decoration.widget({ widget: host.widget(names, width), side: 1 })
         .range(state.doc.line(block.firstLine).to));
     }

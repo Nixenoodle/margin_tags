@@ -77,6 +77,13 @@ class MarginTagsSettings extends PluginSettingTab {
           this.plugin.settings.showInlineWhileEditing = showInlineWhileEditing;
           await this.plugin.applySettings();
         }));
+    new Setting(this.containerEl).setName('Keep inline-field tags inline')
+      .setDesc('Keep tags in key:: value fields inline, such as tags:: #source/book #status/reading. Also supports [key:: value] and (key:: value). Turn off to allow these tags in the margin.')
+      .addToggle(toggle => toggle.setValue(this.plugin.settings.keepInlineFieldTags)
+        .onChange(async keepInlineFieldTags => {
+          this.plugin.settings.keepInlineFieldTags = keepInlineFieldTags;
+          await this.plugin.applySettings();
+        }));
     new Setting(this.containerEl).setName('Editing scope')
       .setDesc('Group tags by paragraph/list item or source line. This also controls where tags are revealed when Show tags inline while editing is on.')
       .addDropdown(dropdown => dropdown.addOption('paragraph', 'Paragraph').addOption('line', 'Line')

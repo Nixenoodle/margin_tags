@@ -6,6 +6,7 @@ An Obsidian plugin inspired by Logseq DB’s tag layout. In Live Preview, tags m
 
 - Tags appear outside the text column, preserving paragraph width.
 - Toggle **Show tags inline while editing** off to keep tags in the margin even on the active line or paragraph. Turn it on to restore inline editing (the default). Source mode always shows the original tags.
+- **Keep inline-field tags inline** (on by default) preserves tags in `tags:: #source/book #status/reading` and other `key:: value` fields, including `[key:: value]` and `(key:: value)`. Turn it off to allow those tags into the margin.
 - Extra tags collapse into an expandable **+N** button.
 - Choose **left-to-right** or **right-to-left** tag priority.
 - Click a tag to open Obsidian’s tag search.

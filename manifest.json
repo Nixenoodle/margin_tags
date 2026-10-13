@@ -1,7 +1,7 @@
 {
   "id": "margin-tags",
   "name": "Margin Tags",
-  "version": "0.1.2",
+  "version": "0.1.3",
   "minAppVersion": "1.6.0",
   "description": "Show inactive Live Preview tags in the right margin, with expandable overflow and inline editing.",
   "author": "Margin Tags contributors",

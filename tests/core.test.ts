@@ -142,3 +142,50 @@ test('Inline editing toggle defaults on for old settings and preserves saved fal
   assert.equal(sanitizeSettings(saved).showInlineWhileEditing, false);
   assert.equal(sanitizeSettings({ showInlineWhileEditing: 'false' } as any).showInlineWhileEditing, true);
 });
+
+test('Inline-field exemption keeps the supplied tags inline, with immediate toggle updates', () => {
+  const source = 'Start\n\ntags:: #source/book #status/reading #processing';
+  let { state, field } = make(source);
+  assert.equal(state.field(field).decorations.size, 0);
+  state = state.update({ effects: configure.of({ ...DEFAULTS, keepInlineFieldTags: false }) }).state;
+  assert.equal(state.field(field).decorations.size, 5); // three replacements, line, rail
+  state = state.update({ effects: configure.of({ ...DEFAULTS, showInlineWhileEditing: false }),
+    selection: { anchor: source.indexOf('tags::') } }).state;
+  assert.equal(state.field(field).decorations.size, 0); // exemption also wins on active lines
+  assert.equal(state.doc.toString(), source);
+});
+
+test('Only field values are exempt; normal tags still use the margin in both scopes', () => {
+  const source = 'Start\n\ntags:: #source/book\nOrdinary #outside\n\nBefore #normal [status:: #reading] after #later (topic:: #science)';
+  for (const mode of ['line', 'paragraph'] as const) {
+    let { state, field } = make(source);
+    state = state.update({ effects: configure.of({ ...DEFAULTS, mode }) }).state;
+    const hidden: string[] = [];
+    state.field(field).decorations.between(0, source.length, (from, to) => {
+      if (from < to) hidden.push(source.slice(from, to));
+    });
+    assert.deepEqual(hidden, ['#outside', '#normal', '#later']);
+  }
+});
+
+test('Field recognition covers quotes, tasks, nested links, and excludes ordinary punctuation', () => {
+  for (const line of ['  tags:: #one', '> tags:: #one', '- tags:: #one', '- [ ] tags:: #one',
+    '> 1. tags:: #one', '**tags**:: #one', '[tags:: [[Book]] #one]', '(tags:: #one)']) {
+    const { state, field } = make(`Start\n\n${line}`);
+    assert.equal(state.field(field).decorations.size, 0, line);
+  }
+  for (const line of ['Tags: #one', 'ordinary #one', 'tags::: #one', '[tags:: #one', '\\[tags:: #one]']) {
+    const { state, field } = make(`Start\n\n${line}`);
+    assert.ok(state.field(field).decorations.size > 0, line);
+  }
+});
+
+test('Field edits re-evaluate exemption and old settings default to preserving fields', () => {
+  let { state, field } = make('Start\n\ntags:: #one');
+  assert.equal(state.field(field).decorations.size, 0);
+  const colon = state.doc.toString().indexOf('::');
+  state = state.update({ changes: { from: colon, to: colon + 1 } }).state;
+  assert.ok(state.field(field).decorations.size > 0);
+  assert.equal(sanitizeSettings({ width: 160 }).keepInlineFieldTags, true);
+  assert.equal(sanitizeSettings(JSON.parse(JSON.stringify({ ...DEFAULTS, keepInlineFieldTags: false }))).keepInlineFieldTags, false);
+});

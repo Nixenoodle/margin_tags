@@ -1,4 +1,4 @@
-/* Margin Tags v0.1.2 | MIT License | See src/ for editable source. */
+/* Margin Tags v0.1.3 | MIT License | See src/ for editable source. */
 "use strict";
 var __defProp = Object.defineProperty;
 var __getOwnPropDesc = Object.getOwnPropertyDescriptor;
@@ -35,13 +35,14 @@ var import_language = require("@codemirror/language");
 var import_view = require("@codemirror/view");
 
 // src/model.ts
-var DEFAULTS = { mode: "paragraph", width: 200, enabled: true, showInlineWhileEditing: true, priority: "left-to-right" };
+var DEFAULTS = { mode: "paragraph", width: 200, enabled: true, showInlineWhileEditing: true, keepInlineFieldTags: true, priority: "left-to-right" };
 function sanitizeSettings(raw) {
   return {
     mode: raw?.mode === "line" ? "line" : "paragraph",
     width: typeof raw?.width === "number" && Number.isFinite(raw.width) ? Math.max(80, Math.min(360, Math.round(raw.width))) : DEFAULTS.width,
     enabled: typeof raw?.enabled === "boolean" ? raw.enabled : true,
     showInlineWhileEditing: typeof raw?.showInlineWhileEditing === "boolean" ? raw.showInlineWhileEditing : true,
+    keepInlineFieldTags: typeof raw?.keepInlineFieldTags === "boolean" ? raw.keepInlineFieldTags : true,
     priority: raw?.priority === "right-to-left" ? "right-to-left" : "left-to-right"
   };
 }
@@ -114,6 +115,36 @@ function availableMargin(contentRight, viewportRight) {
   const space = Math.floor(viewportRight - contentRight - 12 - 8);
   return Number.isFinite(space) && space >= 64 ? Math.min(360, space) : 0;
 }
+function inlineFieldRanges(text) {
+  const whole = text.match(/^\s*(?:>\s*)*(?:(?:[-+*]|\d+[.)])\s+(?:\[[ xX-]\]\s+)?)?(?:\*\*|__)?[\p{L}\p{N}_][\p{L}\p{N}_ /-]*?(?:\*\*|__)?\s*::(?!:)[ \t]*/u);
+  if (whole) return [{ from: whole[0].length, to: text.length }];
+  const result = [];
+  const pattern = /[\[(](?:\*\*|__)?[\p{L}\p{N}_][\p{L}\p{N}_ /-]*?(?:\*\*|__)?\s*::(?!:)[ \t]*/gu;
+  for (const match of text.matchAll(pattern)) {
+    const start = match.index;
+    let backslashes = 0;
+    for (let j = start - 1; j >= 0 && text[j] === "\\"; j--) backslashes++;
+    if (backslashes % 2) continue;
+    const from = start + match[0].length;
+    const stack = [text[start] === "[" ? "]" : ")"];
+    for (let i = from; i < text.length; i++) {
+      const ch = text[i];
+      if (ch === "\\") {
+        i++;
+        continue;
+      }
+      if (ch === "[" || ch === "(") stack.push(ch === "[" ? "]" : ")");
+      else if (ch === stack[stack.length - 1]) {
+        stack.pop();
+        if (!stack.length) {
+          result.push({ from, to: i });
+          break;
+        }
+      }
+    }
+  }
+  return result;
+}
 
 // src/editor.ts
 var configure = import_state.StateEffect.define();
@@ -140,14 +171,25 @@ function createMarginField(host) {
     if (!settings.enabled || !host.isLivePreview(state) || space < 64) return import_view.Decoration.none;
     const ranges = [];
     const width = Math.min(settings.width, space);
+    const fieldRanges = /* @__PURE__ */ new Map();
     for (const block of blocks) {
       if (settings.showInlineWhileEditing && touchesSelection(block, state.selection)) continue;
-      for (const tag of block.tags) ranges.push(import_view.Decoration.replace({}).range(tag.from, tag.to));
+      const tags = settings.keepInlineFieldTags ? block.tags.filter((tag) => {
+        const line = state.doc.lineAt(tag.from);
+        let fields = fieldRanges.get(line.number);
+        if (!fields) {
+          fields = inlineFieldRanges(line.text);
+          fieldRanges.set(line.number, fields);
+        }
+        return !fields.some((field) => tag.from >= line.from + field.from && tag.to <= line.from + field.to);
+      }) : block.tags;
+      if (!tags.length) continue;
+      for (const tag of tags) ranges.push(import_view.Decoration.replace({}).range(tag.from, tag.to));
       ranges.push(import_view.Decoration.line({ attributes: {
         class: "margin-tags-line",
         style: `--margin-tags-width:${width}px`
       } }).range(state.doc.line(block.firstLine).from));
-      const names = prioritizeTags(block.tags.map((t) => t.text), settings.priority);
+      const names = prioritizeTags(tags.map((t) => t.text), settings.priority);
       ranges.push(import_view.Decoration.widget({ widget: host.widget(names, width), side: 1 }).range(state.doc.line(block.firstLine).to));
     }
     return import_view.Decoration.set(ranges, true);
@@ -471,6 +513,10 @@ var MarginTagsSettings = class extends import_obsidian.PluginSettingTab {
     }));
     new import_obsidian.Setting(this.containerEl).setName("Show tags inline while editing").setDesc("On: reveal tags inline when the cursor or selection is in their line or paragraph. Off: keep them in the margin. You can edit tag text in Source mode. Tags still stay inline if there is no room for a margin.").addToggle((toggle) => toggle.setValue(this.plugin.settings.showInlineWhileEditing).onChange(async (showInlineWhileEditing) => {
       this.plugin.settings.showInlineWhileEditing = showInlineWhileEditing;
+      await this.plugin.applySettings();
+    }));
+    new import_obsidian.Setting(this.containerEl).setName("Keep inline-field tags inline").setDesc("Keep tags in key:: value fields inline, such as tags:: #source/book #status/reading. Also supports [key:: value] and (key:: value). Turn off to allow these tags in the margin.").addToggle((toggle) => toggle.setValue(this.plugin.settings.keepInlineFieldTags).onChange(async (keepInlineFieldTags) => {
+      this.plugin.settings.keepInlineFieldTags = keepInlineFieldTags;
       await this.plugin.applySettings();
     }));
     new import_obsidian.Setting(this.containerEl).setName("Editing scope").setDesc("Group tags by paragraph/list item or source line. This also controls where tags are revealed when Show tags inline while editing is on.").addDropdown((dropdown) => dropdown.addOption("paragraph", "Paragraph").addOption("line", "Line").setValue(this.plugin.settings.mode).onChange(async (mode) => {

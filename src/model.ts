@@ -5,9 +5,10 @@ export interface Settings {
   width: number;
   enabled: boolean;
   showInlineWhileEditing: boolean;
+  keepInlineFieldTags: boolean;
   priority: 'left-to-right' | 'right-to-left';
 }
-export const DEFAULTS: Settings = { mode: 'paragraph', width: 200, enabled: true, showInlineWhileEditing: true, priority: 'left-to-right' };
+export const DEFAULTS: Settings = { mode: 'paragraph', width: 200, enabled: true, showInlineWhileEditing: true, keepInlineFieldTags: true, priority: 'left-to-right' };
 export function sanitizeSettings(raw: Partial<Settings> | null | undefined): Settings {
   return {
     mode: raw?.mode === 'line' ? 'line' : 'paragraph',
@@ -16,6 +17,8 @@ export function sanitizeSettings(raw: Partial<Settings> | null | undefined): Set
     enabled: typeof raw?.enabled === 'boolean' ? raw.enabled : true,
     showInlineWhileEditing: typeof raw?.showInlineWhileEditing === 'boolean'
       ? raw.showInlineWhileEditing : true,
+    keepInlineFieldTags: typeof raw?.keepInlineFieldTags === 'boolean'
+      ? raw.keepInlineFieldTags : true,
     priority: raw?.priority === 'right-to-left' ? 'right-to-left' : 'left-to-right',
   };
 }
@@ -100,4 +103,33 @@ export function prioritizeTags(tags: string[], priority: Settings['priority']): 
 export function availableMargin(contentRight: number, viewportRight: number): number {
   const space = Math.floor(viewportRight - contentRight - 12 - 8);
   return Number.isFinite(space) && space >= 64 ? Math.min(360, space) : 0;
+}
+
+/** Value ranges for key:: fields; offsets are local to one source line. */
+export function inlineFieldRanges(text: string): { from: number; to: number }[] {
+  // Whole-line fields, optionally in a quote, list, or task. A single ':' is not a field.
+  const whole = text.match(/^\s*(?:>\s*)*(?:(?:[-+*]|\d+[.)])\s+(?:\[[ xX-]\]\s+)?)?(?:\*\*|__)?[\p{L}\p{N}_][\p{L}\p{N}_ /-]*?(?:\*\*|__)?\s*::(?!:)[ \t]*/u);
+  if (whole) return [{ from: whole[0].length, to: text.length }];
+
+  const result: { from: number; to: number }[] = [];
+  const pattern = /[\[(](?:\*\*|__)?[\p{L}\p{N}_][\p{L}\p{N}_ /-]*?(?:\*\*|__)?\s*::(?!:)[ \t]*/gu;
+  for (const match of text.matchAll(pattern)) {
+    const start = match.index!;
+    // An escaped bracket is ordinary prose.
+    let backslashes = 0;
+    for (let j = start - 1; j >= 0 && text[j] === '\\'; j--) backslashes++;
+    if (backslashes % 2) continue;
+    const from = start + match[0].length;
+    const stack = [text[start] === '[' ? ']' : ')'];
+    for (let i = from; i < text.length; i++) {
+      const ch = text[i];
+      if (ch === '\\') { i++; continue; }
+      if (ch === '[' || ch === '(') stack.push(ch === '[' ? ']' : ')');
+      else if (ch === stack[stack.length - 1]) {
+        stack.pop();
+        if (!stack.length) { result.push({ from, to: i }); break; }
+      }
+    }
+  }
+  return result;
 }
