@@ -1,0 +1,4 @@
+node_modules/
+browser-check.png
+*.log
+data.json
