@@ -1,3 +1,4 @@
+<<<<<<< HEAD
 # Margin Tags
 
 An Obsidian community plugin inspired by Logseq DB's tag presentation.
@@ -97,3 +98,7 @@ API references:
 - https://codemirror.net/docs/ref/
 
 MIT licensed. This is an independent plugin, not an official Logseq or Obsidian product.
+=======
+# margin_tags
+Move Obsidian tags to the margin like Logseq
+>>>>>>> 3e7d0d5006bb011a6faa0128ecb07cc6d51fd133
