@@ -1,6 +1,6 @@
 import { Plugin, PluginSettingTab, Setting, Notice, editorLivePreviewField, type App } from 'obsidian';
 import { EditorView, ViewPlugin } from '@codemirror/view';
-import { createMarginField, configure, marginLayout } from './editor';
+import { createMarginField, configure, createMarginLayout } from './editor';
 import { DEFAULTS, sanitizeSettings, type Settings } from './model';
 import { TagRail } from './widget';
 
@@ -15,12 +15,12 @@ export default class MarginTagsPlugin extends Plugin {
       createMarginField({
         get settings() { return plugin.settings; },
         isLivePreview: state => state.field(editorLivePreviewField, false) === true,
-        widget: (tags, width) => new TagRail(tags, width, {
+        widget: (tags, width, settings) => new TagRail(tags, width, {
           search: (tag, newPane) => { void plugin.openTag(tag, newPane); },
           href: tag => `obsidian://search?vault=${encodeURIComponent(plugin.app.vault.getName())}&query=${encodeURIComponent(`tag:${tag}`)}`,
-        }),
+        }, settings.tagPaddingX, settings.tagPaddingY),
       }),
-      marginLayout,
+      createMarginLayout(() => plugin.settings.marginGap),
       ViewPlugin.fromClass(class {
         constructor(readonly view: EditorView) { plugin.views.add(view); }
         destroy() { plugin.views.delete(this.view); }
@@ -98,6 +98,27 @@ class MarginTagsSettings extends PluginSettingTab {
         .addOption('right-to-left', 'Right to left (last tags first)')
         .setValue(this.plugin.settings.priority).onChange(async priority => {
           this.plugin.settings.priority = priority === 'right-to-left' ? 'right-to-left' : 'left-to-right';
+          await this.plugin.applySettings();
+        }));
+    new Setting(this.containerEl).setName('Tag horizontal padding')
+      .setDesc('Space inside each margin tag on the left and right, in pixels. Default: 7. Larger padding fits fewer tags before +N.')
+      .addSlider(slider => slider.setLimits(0, 24, 1).setValue(this.plugin.settings.tagPaddingX)
+        .setDynamicTooltip().onChange(async value => {
+          this.plugin.settings.tagPaddingX = value;
+          await this.plugin.applySettings();
+        }));
+    new Setting(this.containerEl).setName('Tag vertical padding')
+      .setDesc('Space inside each margin tag above and below the label, in pixels. Default: 1. Larger padding increases the tagged line’s minimum height to avoid overlap.')
+      .addSlider(slider => slider.setLimits(0, 12, 1).setValue(this.plugin.settings.tagPaddingY)
+        .setDynamicTooltip().onChange(async value => {
+          this.plugin.settings.tagPaddingY = value;
+          await this.plugin.applySettings();
+        }));
+    new Setting(this.containerEl).setName('Text-to-margin gap')
+      .setDesc('Space between the text column and the margin tags, in pixels. Default: 12. This uses outside margin space without narrowing the text.')
+      .addSlider(slider => slider.setLimits(0, 80, 1).setValue(this.plugin.settings.marginGap)
+        .setDynamicTooltip().onChange(async value => {
+          this.plugin.settings.marginGap = value;
           await this.plugin.applySettings();
         }));
     new Setting(this.containerEl).setName('Maximum margin width')

@@ -12,9 +12,11 @@ interface Mounted {
 }
 const mounts = new WeakMap<HTMLElement, Mounted>();
 export class TagRail extends WidgetType {
-  constructor(readonly tags: string[], readonly width: number, readonly actions: TagActions) { super(); }
+  constructor(readonly tags: string[], readonly width: number, readonly actions: TagActions,
+    readonly paddingX = 7, readonly paddingY = 1) { super(); }
   eq(other: TagRail): boolean {
-    return other.width === this.width && other.tags.length === this.tags.length
+    return other.width === this.width && other.paddingX === this.paddingX
+      && other.paddingY === this.paddingY && other.tags.length === this.tags.length
       && other.tags.every((tag, i) => tag === this.tags[i]);
   }
   toDOM(view: EditorView): HTMLElement {
@@ -22,6 +24,7 @@ export class TagRail extends WidgetType {
     const win = doc.defaultView!;
     const root = doc.createElement('span');
     root.className = 'margin-tags-rail';
+    this.applyPadding(root);
     root.setAttribute('aria-label', 'Paragraph tags');
     root.contentEditable = 'false';
     // Prevent pointer interaction from moving the text selection and destroying the rail.
@@ -81,6 +84,7 @@ export class TagRail extends WidgetType {
       if (popover) { close(); return; }
       popover = doc.createElement('div');
       popover.className = 'margin-tags-popover';
+      this.applyPadding(popover);
       popover.setAttribute('role', 'dialog');
       popover.setAttribute('aria-label', `${hidden.length} more tags`);
       popover.addEventListener('mousedown', e => e.preventDefault());
@@ -147,6 +151,10 @@ export class TagRail extends WidgetType {
     schedule();
     mounts.set(root, { observer, close, cancel: () => win.cancelAnimationFrame(frame) });
     return root;
+  }
+  private applyPadding(element: HTMLElement): void {
+    element.style.setProperty('--margin-tags-padding-x', `${this.paddingX}px`);
+    element.style.setProperty('--margin-tags-padding-y', `${this.paddingY}px`);
   }
   ignoreEvent(): boolean { return true; }
   destroy(dom: HTMLElement): void {

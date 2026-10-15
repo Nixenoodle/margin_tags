@@ -1,4 +1,4 @@
-/* Margin Tags v0.1.3 | MIT License | See src/ for editable source. */
+/* Margin Tags v0.1.4 | MIT License | See src/ for editable source. */
 "use strict";
 var __defProp = Object.defineProperty;
 var __getOwnPropDesc = Object.getOwnPropertyDescriptor;
@@ -35,11 +35,17 @@ var import_language = require("@codemirror/language");
 var import_view = require("@codemirror/view");
 
 // src/model.ts
-var DEFAULTS = { mode: "paragraph", width: 200, enabled: true, showInlineWhileEditing: true, keepInlineFieldTags: true, priority: "left-to-right" };
+var DEFAULTS = { mode: "paragraph", width: 200, tagPaddingX: 7, tagPaddingY: 1, marginGap: 12, enabled: true, showInlineWhileEditing: true, keepInlineFieldTags: true, priority: "left-to-right" };
+function boundedPixels(value, fallback, maximum) {
+  return typeof value === "number" && Number.isFinite(value) ? Math.max(0, Math.min(maximum, Math.round(value))) : fallback;
+}
 function sanitizeSettings(raw) {
   return {
     mode: raw?.mode === "line" ? "line" : "paragraph",
     width: typeof raw?.width === "number" && Number.isFinite(raw.width) ? Math.max(80, Math.min(360, Math.round(raw.width))) : DEFAULTS.width,
+    tagPaddingX: boundedPixels(raw?.tagPaddingX, DEFAULTS.tagPaddingX, 24),
+    tagPaddingY: boundedPixels(raw?.tagPaddingY, DEFAULTS.tagPaddingY, 12),
+    marginGap: boundedPixels(raw?.marginGap, DEFAULTS.marginGap, 80),
     enabled: typeof raw?.enabled === "boolean" ? raw.enabled : true,
     showInlineWhileEditing: typeof raw?.showInlineWhileEditing === "boolean" ? raw.showInlineWhileEditing : true,
     keepInlineFieldTags: typeof raw?.keepInlineFieldTags === "boolean" ? raw.keepInlineFieldTags : true,
@@ -111,8 +117,8 @@ function visibleCount(widths, available, overflowWidth, gap = 4) {
 function prioritizeTags(tags, priority) {
   return [...new Set(priority === "right-to-left" ? [...tags].reverse() : tags)];
 }
-function availableMargin(contentRight, viewportRight) {
-  const space = Math.floor(viewportRight - contentRight - 12 - 8);
+function availableMargin(contentRight, viewportRight, gap = 12) {
+  const space = Math.floor(viewportRight - contentRight - gap - 8);
   return Number.isFinite(space) && space >= 64 ? Math.min(360, space) : 0;
 }
 function inlineFieldRanges(text) {
@@ -187,10 +193,10 @@ function createMarginField(host) {
       for (const tag of tags) ranges.push(import_view.Decoration.replace({}).range(tag.from, tag.to));
       ranges.push(import_view.Decoration.line({ attributes: {
         class: "margin-tags-line",
-        style: `--margin-tags-width:${width}px`
+        style: `--margin-tags-width:${width}px;--margin-tags-gap:${settings.marginGap}px;--margin-tags-padding-y:${settings.tagPaddingY}px`
       } }).range(state.doc.line(block.firstLine).from));
       const names = prioritizeTags(tags.map((t) => t.text), settings.priority);
-      ranges.push(import_view.Decoration.widget({ widget: host.widget(names, width), side: 1 }).range(state.doc.line(block.firstLine).to));
+      ranges.push(import_view.Decoration.widget({ widget: host.widget(names, width, settings), side: 1 }).range(state.doc.line(block.firstLine).to));
     }
     return import_view.Decoration.set(ranges, true);
   }
@@ -218,8 +224,9 @@ function createMarginField(host) {
   });
 }
 var MarginLayout = class {
-  constructor(view) {
+  constructor(view, getGap = () => 12) {
     this.view = view;
+    this.getGap = getGap;
     __publicField(this, "lastSpace", -1);
     __publicField(this, "destroyed", false);
     __publicField(this, "observer");
@@ -229,7 +236,7 @@ var MarginLayout = class {
     this.measure();
   }
   update(update) {
-    if (update.geometryChanged || update.viewportChanged || update.docChanged) this.measure();
+    if (update.geometryChanged || update.viewportChanged || update.docChanged || update.transactions.some((tr) => tr.effects.some((effect) => effect.is(configure)))) this.measure();
   }
   measure() {
     if (this.destroyed) return;
@@ -239,7 +246,7 @@ var MarginLayout = class {
         const content2 = view.contentDOM.getBoundingClientRect();
         const scroll = view.scrollDOM;
         const right = scroll.getBoundingClientRect().left + scroll.clientLeft + scroll.clientWidth;
-        return availableMargin(content2.right, right);
+        return availableMargin(content2.right, right, this.getGap());
       },
       write: (space) => {
         if (this.destroyed || space === this.lastSpace) return;
@@ -257,26 +264,32 @@ var MarginLayout = class {
     this.observer.disconnect();
   }
 };
-var marginLayout = import_view.ViewPlugin.fromClass(MarginLayout);
+function createMarginLayout(getGap) {
+  return import_view.ViewPlugin.define((view) => new MarginLayout(view, getGap));
+}
+var marginLayout = createMarginLayout(() => 12);
 
 // src/widget.ts
 var import_view2 = require("@codemirror/view");
 var mounts = /* @__PURE__ */ new WeakMap();
 var TagRail = class extends import_view2.WidgetType {
-  constructor(tags, width, actions) {
+  constructor(tags, width, actions, paddingX = 7, paddingY = 1) {
     super();
     this.tags = tags;
     this.width = width;
     this.actions = actions;
+    this.paddingX = paddingX;
+    this.paddingY = paddingY;
   }
   eq(other) {
-    return other.width === this.width && other.tags.length === this.tags.length && other.tags.every((tag, i) => tag === this.tags[i]);
+    return other.width === this.width && other.paddingX === this.paddingX && other.paddingY === this.paddingY && other.tags.length === this.tags.length && other.tags.every((tag, i) => tag === this.tags[i]);
   }
   toDOM(view) {
     const doc = view.dom.ownerDocument;
     const win = doc.defaultView;
     const root = doc.createElement("span");
     root.className = "margin-tags-rail";
+    this.applyPadding(root);
     root.setAttribute("aria-label", "Paragraph tags");
     root.contentEditable = "false";
     root.addEventListener("pointerdown", (e) => e.preventDefault());
@@ -348,6 +361,7 @@ var TagRail = class extends import_view2.WidgetType {
       }
       popover = doc.createElement("div");
       popover.className = "margin-tags-popover";
+      this.applyPadding(popover);
       popover.setAttribute("role", "dialog");
       popover.setAttribute("aria-label", `${hidden.length} more tags`);
       popover.addEventListener("mousedown", (e2) => e2.preventDefault());
@@ -421,6 +435,10 @@ var TagRail = class extends import_view2.WidgetType {
     mounts.set(root, { observer, close, cancel: () => win.cancelAnimationFrame(frame) });
     return root;
   }
+  applyPadding(element) {
+    element.style.setProperty("--margin-tags-padding-x", `${this.paddingX}px`);
+    element.style.setProperty("--margin-tags-padding-y", `${this.paddingY}px`);
+  }
   ignoreEvent() {
     return true;
   }
@@ -449,14 +467,14 @@ var MarginTagsPlugin = class extends import_obsidian.Plugin {
           return plugin.settings;
         },
         isLivePreview: (state) => state.field(import_obsidian.editorLivePreviewField, false) === true,
-        widget: (tags, width) => new TagRail(tags, width, {
+        widget: (tags, width, settings) => new TagRail(tags, width, {
           search: (tag, newPane) => {
             void plugin.openTag(tag, newPane);
           },
           href: (tag) => `obsidian://search?vault=${encodeURIComponent(plugin.app.vault.getName())}&query=${encodeURIComponent(`tag:${tag}`)}`
-        })
+        }, settings.tagPaddingX, settings.tagPaddingY)
       }),
-      marginLayout,
+      createMarginLayout(() => plugin.settings.marginGap),
       import_view3.ViewPlugin.fromClass(class {
         constructor(view) {
           this.view = view;
@@ -525,6 +543,18 @@ var MarginTagsSettings = class extends import_obsidian.PluginSettingTab {
     }));
     new import_obsidian.Setting(this.containerEl).setName("Tag priority").setDesc("Choose which end of the paragraph\u2019s tag order is shown first. Lower-priority tags go into +N.").addDropdown((dropdown) => dropdown.addOption("left-to-right", "Left to right (first tags first)").addOption("right-to-left", "Right to left (last tags first)").setValue(this.plugin.settings.priority).onChange(async (priority) => {
       this.plugin.settings.priority = priority === "right-to-left" ? "right-to-left" : "left-to-right";
+      await this.plugin.applySettings();
+    }));
+    new import_obsidian.Setting(this.containerEl).setName("Tag horizontal padding").setDesc("Space inside each margin tag on the left and right, in pixels. Default: 7. Larger padding fits fewer tags before +N.").addSlider((slider) => slider.setLimits(0, 24, 1).setValue(this.plugin.settings.tagPaddingX).setDynamicTooltip().onChange(async (value) => {
+      this.plugin.settings.tagPaddingX = value;
+      await this.plugin.applySettings();
+    }));
+    new import_obsidian.Setting(this.containerEl).setName("Tag vertical padding").setDesc("Space inside each margin tag above and below the label, in pixels. Default: 1. Larger padding increases the tagged line\u2019s minimum height to avoid overlap.").addSlider((slider) => slider.setLimits(0, 12, 1).setValue(this.plugin.settings.tagPaddingY).setDynamicTooltip().onChange(async (value) => {
+      this.plugin.settings.tagPaddingY = value;
+      await this.plugin.applySettings();
+    }));
+    new import_obsidian.Setting(this.containerEl).setName("Text-to-margin gap").setDesc("Space between the text column and the margin tags, in pixels. Default: 12. This uses outside margin space without narrowing the text.").addSlider((slider) => slider.setLimits(0, 80, 1).setValue(this.plugin.settings.marginGap).setDynamicTooltip().onChange(async (value) => {
+      this.plugin.settings.marginGap = value;
       await this.plugin.applySettings();
     }));
     new import_obsidian.Setting(this.containerEl).setName("Maximum margin width").setDesc("Maximum width outside the text column. Uses existing right-hand space; tags stay inline when that space is too narrow. Readable line length can provide more margin in wide panes.").addSlider((slider) => slider.setLimits(80, 360, 10).setValue(this.plugin.settings.width).setDynamicTooltip().onChange(async (width) => {

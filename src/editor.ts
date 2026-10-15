@@ -8,7 +8,7 @@ export const marginSpace = StateEffect.define<number>();
 export interface Host {
   settings: Settings;
   isLivePreview(state: EditorState): boolean;
-  widget(tags: string[], width: number): WidgetType;
+  widget(tags: string[], width: number, settings: Settings): WidgetType;
 }
 
 /** Only accept tokens classified as hashtags by Obsidian's Markdown parser. */
@@ -53,10 +53,10 @@ export function createMarginField(host: Host) {
       for (const tag of tags) ranges.push(Decoration.replace({}).range(tag.from, tag.to));
       ranges.push(Decoration.line({ attributes: {
         class: 'margin-tags-line',
-        style: `--margin-tags-width:${width}px`,
+        style: `--margin-tags-width:${width}px;--margin-tags-gap:${settings.marginGap}px;--margin-tags-padding-y:${settings.tagPaddingY}px`,
       } }).range(state.doc.line(block.firstLine).from));
       const names = prioritizeTags(tags.map(t => t.text), settings.priority);
-      ranges.push(Decoration.widget({ widget: host.widget(names, width), side: 1 })
+      ranges.push(Decoration.widget({ widget: host.widget(names, width, settings), side: 1 })
         .range(state.doc.line(block.firstLine).to));
     }
     return Decoration.set(ranges, true);
@@ -94,14 +94,15 @@ export class MarginLayout {
   private lastSpace = -1;
   private destroyed = false;
   private observer: ResizeObserver;
-  constructor(readonly view: EditorView) {
+  constructor(readonly view: EditorView, private readonly getGap: () => number = () => 12) {
     this.observer = new view.dom.ownerDocument.defaultView!.ResizeObserver(() => this.measure());
     this.observer.observe(view.scrollDOM);
     this.observer.observe(view.contentDOM);
     this.measure();
   }
   update(update: ViewUpdate) {
-    if (update.geometryChanged || update.viewportChanged || update.docChanged) this.measure();
+    if (update.geometryChanged || update.viewportChanged || update.docChanged
+      || update.transactions.some(tr => tr.effects.some(effect => effect.is(configure)))) this.measure();
   }
   private measure() {
     if (this.destroyed) return;
@@ -111,7 +112,7 @@ export class MarginLayout {
         const content = view.contentDOM.getBoundingClientRect();
         const scroll = view.scrollDOM;
         const right = scroll.getBoundingClientRect().left + scroll.clientLeft + scroll.clientWidth;
-        return availableMargin(content.right, right);
+        return availableMargin(content.right, right, this.getGap());
       },
       write: space => {
         if (this.destroyed || space === this.lastSpace) return;
@@ -127,4 +128,7 @@ export class MarginLayout {
   }
   destroy() { this.destroyed = true; this.observer.disconnect(); }
 }
-export const marginLayout = ViewPlugin.fromClass(MarginLayout);
+export function createMarginLayout(getGap: () => number) {
+  return ViewPlugin.define(view => new MarginLayout(view, getGap));
+}
+export const marginLayout = createMarginLayout(() => 12);

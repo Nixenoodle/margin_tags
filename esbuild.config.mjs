@@ -3,5 +3,5 @@ await build({
   entryPoints: ['src/main.ts'], bundle: true, outfile: 'main.js',
   platform: 'browser', format: 'cjs', target: 'es2020',
   external: ['obsidian', '@codemirror/state', '@codemirror/view', '@codemirror/language', '@lezer/common'],
-  banner: { js: '/* Margin Tags v0.1.3 | MIT License | See src/ for editable source. */' }
+  banner: { js: '/* Margin Tags v0.1.4 | MIT License | See src/ for editable source. */' }
 });

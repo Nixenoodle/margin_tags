@@ -10,7 +10,7 @@ An Obsidian plugin inspired by Logseq DB’s tag layout. In Live Preview, tags m
 - Extra tags collapse into an expandable **+N** button.
 - Choose **left-to-right** or **right-to-left** tag priority.
 - Click a tag to open Obsidian’s tag search.
-- Adjust the margin width and choose paragraph or line editing scope.
+- Adjust the margin width, tag horizontal/vertical padding, and text-to-margin gap. Choose paragraph or line editing scope.
 
 Your Markdown stays unchanged. When there isn’t enough margin space, tags remain inline.
 
@@ -31,6 +31,18 @@ Your Markdown stays unchanged. When there isn’t enough margin space, tags rema
 4. Open a note in **Live Preview**. Configure the plugin under **Settings → Margin Tags**.
 
 Requires Obsidian 1.6 or later. A wide editor pane with **Readable line length** enabled provides room for the outside margin.
+
+## Tag spacing
+
+Under **Settings → Margin Tags**:
+
+| Setting | Default | Range |
+| --- | --- | --- |
+| Tag horizontal padding | 7 px per side | 0–24 px |
+| Tag vertical padding | 1 px per side | 0–12 px |
+| Text-to-margin gap | 12 px | 0–80 px |
+
+Padding applies to tag chips in the margin and expanded overflow panel. The +N button stays compact. Larger horizontal padding causes tags to enter overflow sooner. Larger vertical padding increases the tagged line’s minimum height to avoid overlapping the next line. The text-to-margin gap uses existing outside space without reducing paragraph width. Changes apply immediately and are saved automatically.
 
 ## Development
 

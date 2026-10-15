@@ -20,19 +20,24 @@ test('Margin measurement dispatches after the editor update, and cancels on dest
       changes.push(transaction.effects.value);
     },
   };
-  const layout = new MarginLayout(view);
+  let gap = 12;
+  const layout = new MarginLayout(view, () => gap);
   measured.write(measured.read(view));
   assert.deepEqual(changes, [], 'No nested editor update during the measurement write phase');
   await Promise.resolve();
   assert.deepEqual(changes, [200]);
+  gap = 32;
+  measured.write(measured.read(view));
+  await Promise.resolve();
+  assert.deepEqual(changes, [200, 180]);
   right = 740;
   measured.write(measured.read(view));
   await Promise.resolve();
-  assert.deepEqual(changes, [200, 0]);
+  assert.deepEqual(changes, [200, 180, 0]);
   right = 920;
   measured.write(measured.read(view));
   layout.destroy();
   await Promise.resolve();
-  assert.deepEqual(changes, [200, 0]);
+  assert.deepEqual(changes, [200, 180, 0]);
   assert.equal(disconnected, true);
 });

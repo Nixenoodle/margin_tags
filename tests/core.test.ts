@@ -106,7 +106,7 @@ test('Outside margin uses only spare width and falls back inline in narrow panes
   let { state, field } = make('Start\n\nText #tag');
   const source = state.doc.toString();
   state.field(field).decorations.between(0, state.doc.length, (_from, _to, value) => {
-    assert.ok(!value.spec.attributes?.style?.includes('padding'));
+    assert.ok(!/(^|;)\s*padding(?:-[a-z]+)?\s*:/.test(value.spec.attributes?.style ?? ''));
   });
   state = state.update({ effects: marginSpace.of(0) }).state;
   assert.equal(state.field(field).decorations.size, 0);
@@ -188,4 +188,15 @@ test('Field edits re-evaluate exemption and old settings default to preserving f
   assert.ok(state.field(field).decorations.size > 0);
   assert.equal(sanitizeSettings({ width: 160 }).keepInlineFieldTags, true);
   assert.equal(sanitizeSettings(JSON.parse(JSON.stringify({ ...DEFAULTS, keepInlineFieldTags: false }))).keepInlineFieldTags, false);
+});
+
+test('Spacing settings migrate, persist zeros, and reject invalid pixel values', () => {
+  const old = sanitizeSettings({ width: 160 });
+  assert.deepEqual([old.tagPaddingX, old.tagPaddingY, old.marginGap], [7, 1, 12]);
+  const zero = sanitizeSettings({ tagPaddingX: 0, tagPaddingY: 0, marginGap: 0 });
+  assert.deepEqual([zero.tagPaddingX, zero.tagPaddingY, zero.marginGap], [0, 0, 0]);
+  const invalid = sanitizeSettings({ tagPaddingX: Infinity, tagPaddingY: -5, marginGap: 999 });
+  assert.deepEqual([invalid.tagPaddingX, invalid.tagPaddingY, invalid.marginGap], [7, 0, 80]);
+  assert.equal(availableMargin(700, 920, 32), 180);
+  assert.equal(availableMargin(700, 920, 0), 212);
 });

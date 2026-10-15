@@ -1,5 +1,11 @@
 # Changes
 
+## 0.1.4
+
+- Add horizontal and vertical padding controls for margin tags and the expanded overflow panel. Preserve the original 7 px horizontal / 1 px vertical padding by default.
+- Add a text-to-margin gap control, defaulting to 12 px; recalculate available margin space when it changes.
+- Recalculate overflow after padding changes and allow enough line height for taller tags.
+
 ## 0.1.3
 
 - Add **Keep inline-field tags inline**, enabled by default. Tags in `key:: value` lines and bracketed fields remain beside their field name.

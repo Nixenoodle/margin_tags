@@ -3,17 +3,27 @@ import type { Text, EditorSelection } from '@codemirror/state';
 export interface Settings {
   mode: 'paragraph' | 'line';
   width: number;
+  tagPaddingX: number;
+  tagPaddingY: number;
+  marginGap: number;
   enabled: boolean;
   showInlineWhileEditing: boolean;
   keepInlineFieldTags: boolean;
   priority: 'left-to-right' | 'right-to-left';
 }
-export const DEFAULTS: Settings = { mode: 'paragraph', width: 200, enabled: true, showInlineWhileEditing: true, keepInlineFieldTags: true, priority: 'left-to-right' };
+export const DEFAULTS: Settings = { mode: 'paragraph', width: 200, tagPaddingX: 7, tagPaddingY: 1, marginGap: 12, enabled: true, showInlineWhileEditing: true, keepInlineFieldTags: true, priority: 'left-to-right' };
+function boundedPixels(value: unknown, fallback: number, maximum: number): number {
+  return typeof value === 'number' && Number.isFinite(value)
+    ? Math.max(0, Math.min(maximum, Math.round(value))) : fallback;
+}
 export function sanitizeSettings(raw: Partial<Settings> | null | undefined): Settings {
   return {
     mode: raw?.mode === 'line' ? 'line' : 'paragraph',
     width: typeof raw?.width === 'number' && Number.isFinite(raw.width)
       ? Math.max(80, Math.min(360, Math.round(raw.width))) : DEFAULTS.width,
+    tagPaddingX: boundedPixels(raw?.tagPaddingX, DEFAULTS.tagPaddingX, 24),
+    tagPaddingY: boundedPixels(raw?.tagPaddingY, DEFAULTS.tagPaddingY, 12),
+    marginGap: boundedPixels(raw?.marginGap, DEFAULTS.marginGap, 80),
     enabled: typeof raw?.enabled === 'boolean' ? raw.enabled : true,
     showInlineWhileEditing: typeof raw?.showInlineWhileEditing === 'boolean'
       ? raw.showInlineWhileEditing : true,
@@ -99,9 +109,9 @@ export function prioritizeTags(tags: string[], priority: Settings['priority']): 
   return [...new Set(priority === 'right-to-left' ? [...tags].reverse() : tags)];
 }
 
-/** Leave a 12px gap and 8px edge clearance. Never take width from the text. */
-export function availableMargin(contentRight: number, viewportRight: number): number {
-  const space = Math.floor(viewportRight - contentRight - 12 - 8);
+/** Leave the configured gap and 8px edge clearance. Never take width from the text. */
+export function availableMargin(contentRight: number, viewportRight: number, gap = 12): number {
+  const space = Math.floor(viewportRight - contentRight - gap - 8);
   return Number.isFinite(space) && space >= 64 ? Math.min(360, space) : 0;
 }
 
