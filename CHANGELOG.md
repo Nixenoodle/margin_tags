@@ -1,5 +1,34 @@
 # Changes
 
+## 0.1.9
+
+- Clarify the existing gap slider as **Distance from text**, retaining saved values and supporting zero extra gap.
+- Add synchronized numeric inputs beside every slider, with Enter/blur to apply and Escape to cancel.
+- Allow maximum margin width in one-pixel increments.
+
+## 0.1.8
+
+- Make inside tag lanes fit the actual displayed tag-group width. Maximum margin width now acts as a cap instead of reserving its full width for every paragraph.
+- Include visible tags, inter-tag spacing, and the +N button in each measurement; share the compact width across the paragraph’s continuation lines.
+- Recalculate on edits, appearance changes, and resizing; discard stale measurements and avoid feedback loops when lanes shrink.
+
+## 0.1.7
+
+- Add **Place tags outside text area**, enabled by default. Turn it off to place tags inside the right edge of the text column.
+- Inside placement reserves space across all source lines in the tagged paragraph, capped at 38% for the lane plus 10% for the gap. It works without spare outside space.
+- Preserve typography, overflow, field exemptions, and inline-editing settings in both placements.
+
+## 0.1.6
+
+- Add **Automatic font size percentage**, adjustable from 25–200% of the note font size, defaulting to the existing 78%.
+- Apply the percentage to automatic tag sizing in the margin and overflow panel, including tagged-line height. Fixed pixel sizes remain unchanged.
+
+## 0.1.5
+
+- Add tag font family, automatic or 8–32 px font size, font weight (100–900, including Bold), italic, and underline settings.
+- Apply typography to margin tags and overflow-panel tags; refresh widgets and overflow when settings change.
+- Adjust minimum tagged-line height for the chosen font size and padding. Existing settings retain automatic sizing and regular styling.
+
 ## 0.1.4
 
 - Add horizontal and vertical padding controls for margin tags and the expanded overflow panel. Preserve the original 7 px horizontal / 1 px vertical padding by default.

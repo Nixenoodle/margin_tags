@@ -1,5 +1,6 @@
 import { WidgetType, type EditorView } from '@codemirror/view';
-import { visibleCount } from './model';
+import { measuredLane, type LaneIdentity } from './editor';
+import { visibleCount, DEFAULT_TYPOGRAPHY, tagFontSizeCss, type TagTypography } from './model';
 
 export interface TagActions {
   search(tag: string, newPane: boolean): void;
@@ -13,10 +14,20 @@ interface Mounted {
 const mounts = new WeakMap<HTMLElement, Mounted>();
 export class TagRail extends WidgetType {
   constructor(readonly tags: string[], readonly width: number, readonly actions: TagActions,
-    readonly paddingX = 7, readonly paddingY = 1) { super(); }
+    readonly paddingX = 7, readonly paddingY = 1, readonly typography: TagTypography = DEFAULT_TYPOGRAPHY,
+    readonly measurement?: LaneIdentity) { super(); }
   eq(other: TagRail): boolean {
-    return other.width === this.width && other.paddingX === this.paddingX
-      && other.paddingY === this.paddingY && other.tags.length === this.tags.length
+    return other.measurement?.blockFrom === this.measurement?.blockFrom
+      && other.measurement?.revision === this.measurement?.revision
+      && other.width === this.width && other.paddingX === this.paddingX
+      && other.paddingY === this.paddingY
+      && other.typography.tagFontFamily === this.typography.tagFontFamily
+      && other.typography.tagFontSize === this.typography.tagFontSize
+      && other.typography.tagAutoPercent === this.typography.tagAutoPercent
+      && other.typography.tagFontWeight === this.typography.tagFontWeight
+      && other.typography.tagItalic === this.typography.tagItalic
+      && other.typography.tagUnderline === this.typography.tagUnderline
+      && other.tags.length === this.tags.length
       && other.tags.every((tag, i) => tag === this.tags[i]);
   }
   toDOM(view: EditorView): HTMLElement {
@@ -24,7 +35,7 @@ export class TagRail extends WidgetType {
     const win = doc.defaultView!;
     const root = doc.createElement('span');
     root.className = 'margin-tags-rail';
-    this.applyPadding(root);
+    this.applyAppearance(root);
     root.setAttribute('aria-label', 'Paragraph tags');
     root.contentEditable = 'false';
     // Prevent pointer interaction from moving the text selection and destroying the rail.
@@ -84,7 +95,7 @@ export class TagRail extends WidgetType {
       if (popover) { close(); return; }
       popover = doc.createElement('div');
       popover.className = 'margin-tags-popover';
-      this.applyPadding(popover);
+      this.applyAppearance(popover);
       popover.setAttribute('role', 'dialog');
       popover.setAttribute('aria-label', `${hidden.length} more tags`);
       popover.addEventListener('mousedown', e => e.preventDefault());
@@ -121,14 +132,30 @@ export class TagRail extends WidgetType {
       win.addEventListener('resize', reposition);
       doc.addEventListener('scroll', reposition, true);
     });
+    let disposed = false;
+    let lastMeasured = -1;
+    let measuredAnchor: Element | null = null;
     const fit = () => {
-      if (!root.isConnected) return;
+      if (disposed || !root.isConnected) return;
+      if (this.measurement) {
+        const line = root.closest('.cm-line');
+        if (line !== measuredAnchor) {
+          if (measuredAnchor) observer.unobserve(measuredAnchor);
+          if (line) observer.observe(line);
+          measuredAnchor = line;
+        }
+      }
       chips.forEach(chip => { chip.hidden = false; });
       more.hidden = false;
       // Measuring +total is a safe upper bound for any smaller overflow count.
       more.textContent = `+${this.tags.length}`;
-      const count = visibleCount(chips.map(c => c.getBoundingClientRect().width),
-        root.getBoundingClientRect().width, more.getBoundingClientRect().width);
+      // Always fit against the maximum lane, not its previous compact width.
+      // This lets tags return after a resize without a shrinking feedback loop.
+      const previousWidth = root.style.width;
+      if (this.measurement) root.style.width = 'var(--margin-tags-limit)';
+      const cap = root.getBoundingClientRect().width;
+      const chipWidths = chips.map(c => c.getBoundingClientRect().width);
+      const count = visibleCount(chipWidths, cap, more.getBoundingClientRect().width);
       chips.forEach((chip, i) => { chip.hidden = i >= count; });
       const nextHidden = this.tags.slice(count);
       if (nextHidden.length !== hidden.length) close();
@@ -137,6 +164,22 @@ export class TagRail extends WidgetType {
       more.textContent = `+${hidden.length}`;
       more.setAttribute('aria-label', `Show ${hidden.length} more tags`);
       more.title = hidden.join(', ');
+      if (this.measurement) {
+        const shown = count + (hidden.length ? 1 : 0);
+        const used = chipWidths.slice(0, count).reduce((sum, width) => sum + width, 0)
+          + (hidden.length ? more.getBoundingClientRect().width : 0)
+          + Math.max(0, shown - 1) * 4;
+        const fitted = Math.ceil(Math.min(cap, used));
+        root.style.width = previousWidth;
+        if (fitted !== lastMeasured) {
+          lastMeasured = fitted;
+          win.queueMicrotask(() => {
+            if (!disposed && root.isConnected && lastMeasured === fitted) {
+              view.dispatch({ effects: measuredLane.of({ ...this.measurement!, width: fitted }) });
+            }
+          });
+        }
+      }
       reposition();
     };
     let frame = 0;
@@ -146,13 +189,22 @@ export class TagRail extends WidgetType {
     };
     const observer = new win.ResizeObserver(schedule);
     observer.observe(root);
+    // The compact rail may stay the same width while the available cap grows.
+    if (this.measurement) {
+      observer.observe(view.contentDOM);
+    }
     // Also observe chip sizes so theme/font changes update overflow.
     chips.forEach(chip => observer.observe(chip));
     schedule();
-    mounts.set(root, { observer, close, cancel: () => win.cancelAnimationFrame(frame) });
+    mounts.set(root, { observer, close, cancel: () => { disposed = true; win.cancelAnimationFrame(frame); } });
     return root;
   }
-  private applyPadding(element: HTMLElement): void {
+  private applyAppearance(element: HTMLElement): void {
+    element.style.setProperty('--margin-tags-font-family', this.typography.tagFontFamily || 'var(--font-interface)');
+    element.style.setProperty('--margin-tags-font-size', tagFontSizeCss(this.typography.tagFontSize, this.typography.tagAutoPercent));
+    element.style.setProperty('--margin-tags-font-weight', String(this.typography.tagFontWeight));
+    element.style.setProperty('--margin-tags-font-style', this.typography.tagItalic ? 'italic' : 'normal');
+    element.style.setProperty('--margin-tags-text-decoration', this.typography.tagUnderline ? 'underline' : 'none');
     element.style.setProperty('--margin-tags-padding-x', `${this.paddingX}px`);
     element.style.setProperty('--margin-tags-padding-y', `${this.paddingY}px`);
   }

@@ -2,7 +2,7 @@
 .markdown-source-view.mod-cm6 .cm-line.margin-tags-line {
   position: relative;
   /* Reserve enough height for padded chips, including on adjacent tagged lines. */
-  min-height: max(1lh, calc(var(--font-text-size, 16px) * 1.131 + var(--margin-tags-padding-y, 1px) * 2 + 2px));
+  min-height: max(1lh, calc(var(--margin-tags-font-size, calc(var(--font-text-size, 16px) * 0.78)) * 1.45 + var(--margin-tags-padding-y, 1px) * 2 + 2px));
 }
 .margin-tags-rail {
   position: absolute;
@@ -30,13 +30,16 @@
   display: inline-block;
   flex: 0 0 auto;
   box-sizing: border-box;
-  font-size: 0.78em;
+  font-family: var(--margin-tags-font-family, var(--font-interface));
+  font-size: var(--margin-tags-font-size, calc(var(--font-text-size, 16px) * 0.78));
+  font-weight: var(--margin-tags-font-weight, 400);
+  font-style: var(--margin-tags-font-style, normal);
   line-height: 1.45;
   padding: var(--margin-tags-padding-y, 1px) var(--margin-tags-padding-x, 7px);
   border-radius: var(--tag-radius, 12px);
   background: var(--tag-background, var(--background-secondary));
   color: var(--tag-color, var(--text-accent));
-  text-decoration: none;
+  text-decoration: var(--margin-tags-text-decoration, none);
   white-space: nowrap;
   cursor: pointer;
 }
@@ -111,3 +114,17 @@
   box-shadow: none;
   cursor: pointer;
 }
+
+/* Optional inside placement: reserve a lane without overlapping paragraph text. */
+.markdown-source-view.mod-cm6 .cm-line.margin-tags-inside-line {
+  box-sizing: border-box;
+  padding-right: calc(var(--margin-tags-width) + var(--margin-tags-gap));
+}
+.margin-tags-inside-line .margin-tags-rail {
+  left: auto;
+  right: 0;
+}
+
+.margin-tags-number-control { flex-wrap: wrap; gap: 8px; }
+.margin-tags-number-control input.margin-tags-number-input { width: 5.5em; }
+.margin-tags-number-unit { color: var(--text-muted); font-size: var(--font-ui-small); }

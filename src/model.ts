@@ -1,29 +1,55 @@
 import type { Text, EditorSelection } from '@codemirror/state';
 
-export interface Settings {
+export interface TagTypography {
+  tagFontFamily: string;
+  tagFontSize: number;
+  tagAutoPercent: number;
+  tagFontWeight: number;
+  tagItalic: boolean;
+  tagUnderline: boolean;
+}
+export const DEFAULT_TYPOGRAPHY: TagTypography = {
+  tagFontFamily: '', tagFontSize: 0, tagAutoPercent: 78, tagFontWeight: 400, tagItalic: false, tagUnderline: false,
+};
+export function tagFontSizeCss(size: number, percent = 78): string {
+  return size === 0 ? `calc(var(--font-text-size, 16px) * ${percent / 100})` : `${size}px`;
+}
+export interface Settings extends TagTypography {
   mode: 'paragraph' | 'line';
   width: number;
   tagPaddingX: number;
   tagPaddingY: number;
   marginGap: number;
   enabled: boolean;
+  tagsOutside: boolean;
   showInlineWhileEditing: boolean;
   keepInlineFieldTags: boolean;
   priority: 'left-to-right' | 'right-to-left';
 }
-export const DEFAULTS: Settings = { mode: 'paragraph', width: 200, tagPaddingX: 7, tagPaddingY: 1, marginGap: 12, enabled: true, showInlineWhileEditing: true, keepInlineFieldTags: true, priority: 'left-to-right' };
+export const DEFAULTS: Settings = { ...DEFAULT_TYPOGRAPHY, mode: 'paragraph', width: 200, tagPaddingX: 7, tagPaddingY: 1, marginGap: 12, enabled: true, tagsOutside: true, showInlineWhileEditing: true, keepInlineFieldTags: true, priority: 'left-to-right' };
 function boundedPixels(value: unknown, fallback: number, maximum: number): number {
   return typeof value === 'number' && Number.isFinite(value)
     ? Math.max(0, Math.min(maximum, Math.round(value))) : fallback;
 }
 export function sanitizeSettings(raw: Partial<Settings> | null | undefined): Settings {
   return {
+    tagFontFamily: typeof raw?.tagFontFamily === 'string' && !/[;{}<>]/.test(raw.tagFontFamily)
+      ? raw.tagFontFamily.trim().slice(0, 200) : '',
+    tagFontSize: typeof raw?.tagFontSize === 'number' && Number.isFinite(raw.tagFontSize) && raw.tagFontSize !== 0
+      ? Math.max(8, Math.min(32, Math.round(raw.tagFontSize))) : 0,
+    tagAutoPercent: typeof raw?.tagAutoPercent === 'number' && Number.isFinite(raw.tagAutoPercent)
+      ? Math.max(25, Math.min(200, Math.round(raw.tagAutoPercent))) : 78,
+    tagFontWeight: typeof raw?.tagFontWeight === 'number' && Number.isFinite(raw.tagFontWeight)
+      ? Math.max(100, Math.min(900, Math.round(raw.tagFontWeight / 100) * 100)) : 400,
+    tagItalic: raw?.tagItalic === true,
+    tagUnderline: raw?.tagUnderline === true,
     mode: raw?.mode === 'line' ? 'line' : 'paragraph',
     width: typeof raw?.width === 'number' && Number.isFinite(raw.width)
       ? Math.max(80, Math.min(360, Math.round(raw.width))) : DEFAULTS.width,
     tagPaddingX: boundedPixels(raw?.tagPaddingX, DEFAULTS.tagPaddingX, 24),
     tagPaddingY: boundedPixels(raw?.tagPaddingY, DEFAULTS.tagPaddingY, 12),
     marginGap: boundedPixels(raw?.marginGap, DEFAULTS.marginGap, 80),
+    tagsOutside: typeof raw?.tagsOutside === 'boolean' ? raw.tagsOutside : true,
     enabled: typeof raw?.enabled === 'boolean' ? raw.enabled : true,
     showInlineWhileEditing: typeof raw?.showInlineWhileEditing === 'boolean'
       ? raw.showInlineWhileEditing : true,

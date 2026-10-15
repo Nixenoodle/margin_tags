@@ -2,8 +2,8 @@ import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { EditorState, EditorSelection, StateField, StateEffect, Text } from '@codemirror/state';
 import { WidgetType } from '@codemirror/view';
-import { createMarginField, readTags, configure, marginSpace } from '../src/editor';
-import { collectBlocks, touchesSelection, visibleCount, sanitizeSettings, DEFAULTS, prioritizeTags, availableMargin } from '../src/model';
+import { createMarginField, readTags, configure, marginSpace, measuredLane } from '../src/editor';
+import { collectBlocks, touchesSelection, visibleCount, sanitizeSettings, DEFAULTS, prioritizeTags, availableMargin, tagFontSizeCss } from '../src/model';
 import { testLanguage } from './parser';
 
 class Dummy extends WidgetType { toDOM(): HTMLElement { throw new Error('No DOM in state tests'); } }
@@ -199,4 +199,84 @@ test('Spacing settings migrate, persist zeros, and reject invalid pixel values',
   assert.deepEqual([invalid.tagPaddingX, invalid.tagPaddingY, invalid.marginGap], [7, 0, 80]);
   assert.equal(availableMargin(700, 920, 32), 180);
   assert.equal(availableMargin(700, 920, 0), 212);
+});
+
+test('Typography settings migrate and preserve custom styles with bounded sizes and weights', () => {
+  const old = sanitizeSettings({ width: 160 });
+  assert.deepEqual([old.tagFontFamily, old.tagFontSize, old.tagFontWeight, old.tagItalic, old.tagUnderline], ['', 0, 400, false, false]);
+  const custom = sanitizeSettings(JSON.parse(JSON.stringify({ ...DEFAULTS, tagFontFamily: ' Georgia, serif ', tagFontSize: 20, tagFontWeight: 700, tagItalic: true, tagUnderline: true })));
+  assert.deepEqual([custom.tagFontFamily, custom.tagFontSize, custom.tagFontWeight, custom.tagItalic, custom.tagUnderline], ['Georgia, serif', 20, 700, true, true]);
+  const invalid = sanitizeSettings({ tagFontSize: 200, tagFontWeight: -100, tagFontFamily: 'Arial; color: red' });
+  assert.deepEqual([invalid.tagFontSize, invalid.tagFontWeight, invalid.tagFontFamily], [32, 100, '']);
+  assert.equal(sanitizeSettings({ tagFontSize: NaN }).tagFontSize, 0);
+});
+
+test('Automatic font percentage migrates, scales automatic sizes, and leaves fixed sizes unchanged', () => {
+  assert.equal(sanitizeSettings({ width: 160 }).tagAutoPercent, 78);
+  const saved = sanitizeSettings(JSON.parse(JSON.stringify({ ...DEFAULTS, tagAutoPercent: 125 })));
+  assert.equal(saved.tagAutoPercent, 125);
+  assert.equal(tagFontSizeCss(0, saved.tagAutoPercent), 'calc(var(--font-text-size, 16px) * 1.25)');
+  assert.equal(tagFontSizeCss(0, 100), 'calc(var(--font-text-size, 16px) * 1)');
+  assert.equal(tagFontSizeCss(20, 125), '20px');
+  assert.equal(sanitizeSettings({ tagAutoPercent: -5 }).tagAutoPercent, 25);
+  assert.equal(sanitizeSettings({ tagAutoPercent: 500 }).tagAutoPercent, 200);
+  assert.equal(sanitizeSettings({ tagAutoPercent: NaN }).tagAutoPercent, 78);
+});
+
+test('Placement toggle switches outside fallback to an inside lane across the full paragraph', () => {
+  const source = 'Start\n\nFirst #one\nContinuation #two';
+  let { state, field } = make(source);
+  state = state.update({ effects: marginSpace.of(0) }).state;
+  assert.equal(state.field(field).decorations.size, 0);
+  state = state.update({ effects: configure.of({ ...DEFAULTS, tagsOutside: false }) }).state;
+  const reserved: number[] = [];
+  state.field(field).decorations.between(0, source.length, (from, _to, value) => {
+    if (value.spec.attributes?.class.includes('margin-tags-inside-line')) reserved.push(from);
+  });
+  assert.deepEqual(reserved, [source.indexOf('First'), source.indexOf('Continuation')]);
+  assert.equal(state.field(field).decorations.size, 5);
+  state = state.update({ selection: { anchor: source.indexOf('Continuation') } }).state;
+  assert.equal(state.field(field).decorations.size, 0); // normal inline-editing behavior
+  state = state.update({ effects: configure.of({ ...DEFAULTS, tagsOutside: false, showInlineWhileEditing: false }) }).state;
+  assert.equal(state.field(field).decorations.size, 5);
+  state = state.update({ effects: configure.of(DEFAULTS) }).state;
+  assert.equal(state.field(field).decorations.size, 0);
+  assert.equal(state.doc.toString(), source);
+  assert.equal(sanitizeSettings({ width: 160 }).tagsOutside, true);
+  assert.equal(sanitizeSettings(JSON.parse(JSON.stringify({ ...DEFAULTS, tagsOutside: false }))).tagsOutside, false);
+});
+
+test('Inside lanes shrink per paragraph and share the measured width across continuation lines', () => {
+  const source = 'Start\n\nFirst #one\nContinuation\n\nSecond #two';
+  let { state, field } = make(source);
+  state = state.update({ effects: configure.of({ ...DEFAULTS, tagsOutside: false, width: 190 }) }).state;
+  const revision = state.field(field).revision;
+  state = state.update({ effects: [
+    measuredLane.of({ blockFrom: source.indexOf('First'), revision, width: 70 }),
+    measuredLane.of({ blockFrom: source.indexOf('Second'), revision, width: 125 }),
+  ] }).state;
+  const styles: string[] = [];
+  state.field(field).decorations.between(0, source.length, (_from, _to, value) => {
+    if (value.spec.attributes) styles.push(value.spec.attributes.style);
+  });
+  assert.equal(styles.length, 3);
+  assert.ok(styles[0].includes('--margin-tags-width:min(70px, min(190px, 38%))'));
+  assert.equal(styles[1], styles[0]);
+  assert.ok(styles[2].includes('--margin-tags-width:min(125px, min(190px, 38%))'));
+  assert.equal(state.doc.toString(), source);
+});
+
+test('Measurements are invalidated by edits and settings, and stale widget reports are ignored', () => {
+  const source = 'Start\n\nText #tag';
+  let { state, field } = make(source);
+  state = state.update({ effects: configure.of({ ...DEFAULTS, tagsOutside: false }) }).state;
+  const old = { blockFrom: source.indexOf('Text'), revision: state.field(field).revision, width: 70 };
+  state = state.update({ effects: measuredLane.of(old) }).state;
+  assert.equal(state.field(field).widths.get(old.blockFrom), 70);
+  state = state.update({ changes: { from: 0, insert: 'New ' } }).state;
+  state = state.update({ effects: measuredLane.of(old) }).state;
+  assert.equal(state.field(field).widths.size, 0);
+  state = state.update({ effects: configure.of(DEFAULTS) }).state;
+  state = state.update({ effects: measuredLane.of({ ...old, blockFrom: old.blockFrom + 4, revision: state.field(field).revision }) }).state;
+  assert.equal(state.field(field).widths.size, 0); // outside mode ignores inside reports
 });

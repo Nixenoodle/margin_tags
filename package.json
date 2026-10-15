@@ -1,6 +1,6 @@
 {
   "name": "margin-tags",
-  "version": "0.1.4",
+  "version": "0.1.9",
   "private": true,
   "description": "Move inactive Live Preview tags into a compact right margin.",
   "scripts": {

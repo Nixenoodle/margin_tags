@@ -1,14 +1,16 @@
 import { StateEffect, StateField, type EditorState, type Range } from '@codemirror/state';
 import { syntaxTree } from '@codemirror/language';
 import { Decoration, EditorView, ViewPlugin, type ViewUpdate, type DecorationSet, type WidgetType } from '@codemirror/view';
-import { collectBlocks, touchesSelection, prioritizeTags, availableMargin, inlineFieldRanges, type Block, type Settings, type Tag } from './model';
+import { collectBlocks, touchesSelection, prioritizeTags, availableMargin, inlineFieldRanges, tagFontSizeCss, type Block, type Settings, type Tag } from './model';
 
 export const configure = StateEffect.define<Settings>();
 export const marginSpace = StateEffect.define<number>();
+export interface LaneIdentity { blockFrom: number; revision: number }
+export const measuredLane = StateEffect.define<LaneIdentity & { width: number }>();
 export interface Host {
   settings: Settings;
   isLivePreview(state: EditorState): boolean;
-  widget(tags: string[], width: number, settings: Settings): WidgetType;
+  widget(tags: string[], width: number, settings: Settings, measurement?: LaneIdentity): WidgetType;
 }
 
 /** Only accept tokens classified as hashtags by Obsidian's Markdown parser. */
@@ -33,10 +35,12 @@ export function readTags(state: EditorState): Tag[] {
 }
 
 export function createMarginField(host: Host) {
-  function decorate(state: EditorState, blocks: Block[], settings: Settings, space: number): DecorationSet {
-    if (!settings.enabled || !host.isLivePreview(state) || space < 64) return Decoration.none;
+  function decorate(state: EditorState, blocks: Block[], settings: Settings, space: number, widths: Map<number, number>, revision: number): DecorationSet {
+    if (!settings.enabled || !host.isLivePreview(state) || (settings.tagsOutside && space < 64)) return Decoration.none;
     const ranges: Range<Decoration>[] = [];
-    const width = Math.min(settings.width, space);
+    const width = settings.tagsOutside ? Math.min(settings.width, space) : settings.width;
+    const lane = settings.tagsOutside ? `${width}px` : `min(${width}px, 38%)`;
+    const gap = settings.tagsOutside ? `${settings.marginGap}px` : `min(${settings.marginGap}px, 10%)`;
     const fieldRanges = new Map<number, { from: number; to: number }[]>();
     for (const block of blocks) {
       if (settings.showInlineWhileEditing && touchesSelection(block, state.selection)) continue;
@@ -51,23 +55,33 @@ export function createMarginField(host: Host) {
       }) : block.tags;
       if (!tags.length) continue;
       for (const tag of tags) ranges.push(Decoration.replace({}).range(tag.from, tag.to));
-      ranges.push(Decoration.line({ attributes: {
-        class: 'margin-tags-line',
-        style: `--margin-tags-width:${width}px;--margin-tags-gap:${settings.marginGap}px;--margin-tags-padding-y:${settings.tagPaddingY}px`,
-      } }).range(state.doc.line(block.firstLine).from));
+      const measured = widths.get(block.from);
+      const fittedLane = !settings.tagsOutside && measured !== undefined ? `min(${measured}px, ${lane})` : lane;
+      const style = `--margin-tags-limit:${lane};--margin-tags-width:${fittedLane};--margin-tags-gap:${gap};--margin-tags-padding-y:${settings.tagPaddingY}px;--margin-tags-font-size:${tagFontSizeCss(settings.tagFontSize, settings.tagAutoPercent)}`;
+      // Inside placement reserves the same lane on every source line of the block.
+      // Only the anchor line needs widget positioning and minimum chip height.
+      const lastLine = settings.tagsOutside ? block.firstLine : block.lastLine;
+      for (let n = block.firstLine; n <= lastLine; n++) {
+        const classes = [n === block.firstLine ? 'margin-tags-line' : '',
+          settings.tagsOutside ? '' : 'margin-tags-inside-line'].filter(Boolean).join(' ');
+        ranges.push(Decoration.line({ attributes: { class: classes, style } })
+          .range(state.doc.line(n).from));
+      }
       const names = prioritizeTags(tags.map(t => t.text), settings.priority);
-      ranges.push(Decoration.widget({ widget: host.widget(names, width, settings), side: 1 })
+      ranges.push(Decoration.widget({ widget: host.widget(names, width, settings, settings.tagsOutside ? undefined : { blockFrom: block.from, revision }), side: 1 })
         .range(state.doc.line(block.firstLine).to));
     }
     return Decoration.set(ranges, true);
   }
   return StateField.define<{
-    settings: Settings; blocks: Block[]; space: number; decorations: DecorationSet;
+    settings: Settings; blocks: Block[]; space: number; widths: Map<number, number>; revision: number; decorations: DecorationSet;
   }>({
     create(state) {
       const settings = { ...host.settings };
       const blocks = collectBlocks(state.doc, readTags(state), settings.mode);
-      return { settings, blocks, space: 0, decorations: decorate(state, blocks, settings, 0) };
+      const widths = new Map<number, number>();
+      return { settings, blocks, space: 0, widths, revision: 0,
+        decorations: decorate(state, blocks, settings, 0, widths, 0) };
     },
     update(value, tr) {
       let settings = value.settings;
@@ -79,9 +93,22 @@ export function createMarginField(host: Host) {
       const reparse = tr.docChanged || syntaxTree(tr.state) !== syntaxTree(tr.startState)
         || settings.mode !== value.settings.mode;
       const blocks = reparse ? collectBlocks(tr.state.doc, readTags(tr.state), settings.mode) : value.blocks;
-      if (reparse || tr.selection || settings !== value.settings || space !== value.space
+      const reset = reparse || settings !== value.settings;
+      const revision = reset ? value.revision + 1 : value.revision;
+      let widths = reset ? new Map<number, number>() : value.widths;
+      for (const effect of tr.effects) {
+        if (!effect.is(measuredLane) || settings.tagsOutside) continue;
+        const report = effect.value;
+        if (report.revision !== revision || !Number.isFinite(report.width) || report.width < 0
+          || !blocks.some(block => block.from === report.blockFrom)) continue;
+        const width = Math.min(settings.width, Math.ceil(report.width));
+        if (widths.get(report.blockFrom) === width) continue;
+        if (widths === value.widths) widths = new Map(widths);
+        widths.set(report.blockFrom, width);
+      }
+      if (reparse || tr.selection || settings !== value.settings || space !== value.space || widths !== value.widths
         || host.isLivePreview(tr.state) !== host.isLivePreview(tr.startState)) {
-        return { settings, blocks, space, decorations: decorate(tr.state, blocks, settings, space) };
+        return { settings, blocks, space, widths, revision, decorations: decorate(tr.state, blocks, settings, space, widths, revision) };
       }
       return value;
     },

@@ -1,4 +1,4 @@
-/* Margin Tags v0.1.4 | MIT License | See src/ for editable source. */
+/* Margin Tags v0.1.9 | MIT License | See src/ for editable source. */
 "use strict";
 var __defProp = Object.defineProperty;
 var __getOwnPropDesc = Object.getOwnPropertyDescriptor;
@@ -35,17 +35,35 @@ var import_language = require("@codemirror/language");
 var import_view = require("@codemirror/view");
 
 // src/model.ts
-var DEFAULTS = { mode: "paragraph", width: 200, tagPaddingX: 7, tagPaddingY: 1, marginGap: 12, enabled: true, showInlineWhileEditing: true, keepInlineFieldTags: true, priority: "left-to-right" };
+var DEFAULT_TYPOGRAPHY = {
+  tagFontFamily: "",
+  tagFontSize: 0,
+  tagAutoPercent: 78,
+  tagFontWeight: 400,
+  tagItalic: false,
+  tagUnderline: false
+};
+function tagFontSizeCss(size, percent = 78) {
+  return size === 0 ? `calc(var(--font-text-size, 16px) * ${percent / 100})` : `${size}px`;
+}
+var DEFAULTS = { ...DEFAULT_TYPOGRAPHY, mode: "paragraph", width: 200, tagPaddingX: 7, tagPaddingY: 1, marginGap: 12, enabled: true, tagsOutside: true, showInlineWhileEditing: true, keepInlineFieldTags: true, priority: "left-to-right" };
 function boundedPixels(value, fallback, maximum) {
   return typeof value === "number" && Number.isFinite(value) ? Math.max(0, Math.min(maximum, Math.round(value))) : fallback;
 }
 function sanitizeSettings(raw) {
   return {
+    tagFontFamily: typeof raw?.tagFontFamily === "string" && !/[;{}<>]/.test(raw.tagFontFamily) ? raw.tagFontFamily.trim().slice(0, 200) : "",
+    tagFontSize: typeof raw?.tagFontSize === "number" && Number.isFinite(raw.tagFontSize) && raw.tagFontSize !== 0 ? Math.max(8, Math.min(32, Math.round(raw.tagFontSize))) : 0,
+    tagAutoPercent: typeof raw?.tagAutoPercent === "number" && Number.isFinite(raw.tagAutoPercent) ? Math.max(25, Math.min(200, Math.round(raw.tagAutoPercent))) : 78,
+    tagFontWeight: typeof raw?.tagFontWeight === "number" && Number.isFinite(raw.tagFontWeight) ? Math.max(100, Math.min(900, Math.round(raw.tagFontWeight / 100) * 100)) : 400,
+    tagItalic: raw?.tagItalic === true,
+    tagUnderline: raw?.tagUnderline === true,
     mode: raw?.mode === "line" ? "line" : "paragraph",
     width: typeof raw?.width === "number" && Number.isFinite(raw.width) ? Math.max(80, Math.min(360, Math.round(raw.width))) : DEFAULTS.width,
     tagPaddingX: boundedPixels(raw?.tagPaddingX, DEFAULTS.tagPaddingX, 24),
     tagPaddingY: boundedPixels(raw?.tagPaddingY, DEFAULTS.tagPaddingY, 12),
     marginGap: boundedPixels(raw?.marginGap, DEFAULTS.marginGap, 80),
+    tagsOutside: typeof raw?.tagsOutside === "boolean" ? raw.tagsOutside : true,
     enabled: typeof raw?.enabled === "boolean" ? raw.enabled : true,
     showInlineWhileEditing: typeof raw?.showInlineWhileEditing === "boolean" ? raw.showInlineWhileEditing : true,
     keepInlineFieldTags: typeof raw?.keepInlineFieldTags === "boolean" ? raw.keepInlineFieldTags : true,
@@ -155,6 +173,7 @@ function inlineFieldRanges(text) {
 // src/editor.ts
 var configure = import_state.StateEffect.define();
 var marginSpace = import_state.StateEffect.define();
+var measuredLane = import_state.StateEffect.define();
 function readTags(state) {
   const spans = [];
   (0, import_language.syntaxTree)(state).iterate({ enter(node) {
@@ -173,10 +192,12 @@ function readTags(state) {
   return merged.map((r) => ({ ...r, text: state.sliceDoc(r.from, r.to) })).filter((r) => r.text.startsWith("#") && r.text.length > 1 && !/\s/.test(r.text));
 }
 function createMarginField(host) {
-  function decorate(state, blocks, settings, space) {
-    if (!settings.enabled || !host.isLivePreview(state) || space < 64) return import_view.Decoration.none;
+  function decorate(state, blocks, settings, space, widths, revision) {
+    if (!settings.enabled || !host.isLivePreview(state) || settings.tagsOutside && space < 64) return import_view.Decoration.none;
     const ranges = [];
-    const width = Math.min(settings.width, space);
+    const width = settings.tagsOutside ? Math.min(settings.width, space) : settings.width;
+    const lane = settings.tagsOutside ? `${width}px` : `min(${width}px, 38%)`;
+    const gap = settings.tagsOutside ? `${settings.marginGap}px` : `min(${settings.marginGap}px, 10%)`;
     const fieldRanges = /* @__PURE__ */ new Map();
     for (const block of blocks) {
       if (settings.showInlineWhileEditing && touchesSelection(block, state.selection)) continue;
@@ -191,12 +212,19 @@ function createMarginField(host) {
       }) : block.tags;
       if (!tags.length) continue;
       for (const tag of tags) ranges.push(import_view.Decoration.replace({}).range(tag.from, tag.to));
-      ranges.push(import_view.Decoration.line({ attributes: {
-        class: "margin-tags-line",
-        style: `--margin-tags-width:${width}px;--margin-tags-gap:${settings.marginGap}px;--margin-tags-padding-y:${settings.tagPaddingY}px`
-      } }).range(state.doc.line(block.firstLine).from));
+      const measured = widths.get(block.from);
+      const fittedLane = !settings.tagsOutside && measured !== void 0 ? `min(${measured}px, ${lane})` : lane;
+      const style = `--margin-tags-limit:${lane};--margin-tags-width:${fittedLane};--margin-tags-gap:${gap};--margin-tags-padding-y:${settings.tagPaddingY}px;--margin-tags-font-size:${tagFontSizeCss(settings.tagFontSize, settings.tagAutoPercent)}`;
+      const lastLine = settings.tagsOutside ? block.firstLine : block.lastLine;
+      for (let n = block.firstLine; n <= lastLine; n++) {
+        const classes = [
+          n === block.firstLine ? "margin-tags-line" : "",
+          settings.tagsOutside ? "" : "margin-tags-inside-line"
+        ].filter(Boolean).join(" ");
+        ranges.push(import_view.Decoration.line({ attributes: { class: classes, style } }).range(state.doc.line(n).from));
+      }
       const names = prioritizeTags(tags.map((t) => t.text), settings.priority);
-      ranges.push(import_view.Decoration.widget({ widget: host.widget(names, width, settings), side: 1 }).range(state.doc.line(block.firstLine).to));
+      ranges.push(import_view.Decoration.widget({ widget: host.widget(names, width, settings, settings.tagsOutside ? void 0 : { blockFrom: block.from, revision }), side: 1 }).range(state.doc.line(block.firstLine).to));
     }
     return import_view.Decoration.set(ranges, true);
   }
@@ -204,7 +232,15 @@ function createMarginField(host) {
     create(state) {
       const settings = { ...host.settings };
       const blocks = collectBlocks(state.doc, readTags(state), settings.mode);
-      return { settings, blocks, space: 0, decorations: decorate(state, blocks, settings, 0) };
+      const widths = /* @__PURE__ */ new Map();
+      return {
+        settings,
+        blocks,
+        space: 0,
+        widths,
+        revision: 0,
+        decorations: decorate(state, blocks, settings, 0, widths, 0)
+      };
     },
     update(value, tr) {
       let settings = value.settings;
@@ -215,8 +251,20 @@ function createMarginField(host) {
       }
       const reparse = tr.docChanged || (0, import_language.syntaxTree)(tr.state) !== (0, import_language.syntaxTree)(tr.startState) || settings.mode !== value.settings.mode;
       const blocks = reparse ? collectBlocks(tr.state.doc, readTags(tr.state), settings.mode) : value.blocks;
-      if (reparse || tr.selection || settings !== value.settings || space !== value.space || host.isLivePreview(tr.state) !== host.isLivePreview(tr.startState)) {
-        return { settings, blocks, space, decorations: decorate(tr.state, blocks, settings, space) };
+      const reset = reparse || settings !== value.settings;
+      const revision = reset ? value.revision + 1 : value.revision;
+      let widths = reset ? /* @__PURE__ */ new Map() : value.widths;
+      for (const effect of tr.effects) {
+        if (!effect.is(measuredLane) || settings.tagsOutside) continue;
+        const report = effect.value;
+        if (report.revision !== revision || !Number.isFinite(report.width) || report.width < 0 || !blocks.some((block) => block.from === report.blockFrom)) continue;
+        const width = Math.min(settings.width, Math.ceil(report.width));
+        if (widths.get(report.blockFrom) === width) continue;
+        if (widths === value.widths) widths = new Map(widths);
+        widths.set(report.blockFrom, width);
+      }
+      if (reparse || tr.selection || settings !== value.settings || space !== value.space || widths !== value.widths || host.isLivePreview(tr.state) !== host.isLivePreview(tr.startState)) {
+        return { settings, blocks, space, widths, revision, decorations: decorate(tr.state, blocks, settings, space, widths, revision) };
       }
       return value;
     },
@@ -273,23 +321,25 @@ var marginLayout = createMarginLayout(() => 12);
 var import_view2 = require("@codemirror/view");
 var mounts = /* @__PURE__ */ new WeakMap();
 var TagRail = class extends import_view2.WidgetType {
-  constructor(tags, width, actions, paddingX = 7, paddingY = 1) {
+  constructor(tags, width, actions, paddingX = 7, paddingY = 1, typography = DEFAULT_TYPOGRAPHY, measurement) {
     super();
     this.tags = tags;
     this.width = width;
     this.actions = actions;
     this.paddingX = paddingX;
     this.paddingY = paddingY;
+    this.typography = typography;
+    this.measurement = measurement;
   }
   eq(other) {
-    return other.width === this.width && other.paddingX === this.paddingX && other.paddingY === this.paddingY && other.tags.length === this.tags.length && other.tags.every((tag, i) => tag === this.tags[i]);
+    return other.measurement?.blockFrom === this.measurement?.blockFrom && other.measurement?.revision === this.measurement?.revision && other.width === this.width && other.paddingX === this.paddingX && other.paddingY === this.paddingY && other.typography.tagFontFamily === this.typography.tagFontFamily && other.typography.tagFontSize === this.typography.tagFontSize && other.typography.tagAutoPercent === this.typography.tagAutoPercent && other.typography.tagFontWeight === this.typography.tagFontWeight && other.typography.tagItalic === this.typography.tagItalic && other.typography.tagUnderline === this.typography.tagUnderline && other.tags.length === this.tags.length && other.tags.every((tag, i) => tag === this.tags[i]);
   }
   toDOM(view) {
     const doc = view.dom.ownerDocument;
     const win = doc.defaultView;
     const root = doc.createElement("span");
     root.className = "margin-tags-rail";
-    this.applyPadding(root);
+    this.applyAppearance(root);
     root.setAttribute("aria-label", "Paragraph tags");
     root.contentEditable = "false";
     root.addEventListener("pointerdown", (e) => e.preventDefault());
@@ -361,7 +411,7 @@ var TagRail = class extends import_view2.WidgetType {
       }
       popover = doc.createElement("div");
       popover.className = "margin-tags-popover";
-      this.applyPadding(popover);
+      this.applyAppearance(popover);
       popover.setAttribute("role", "dialog");
       popover.setAttribute("aria-label", `${hidden.length} more tags`);
       popover.addEventListener("mousedown", (e2) => e2.preventDefault());
@@ -399,18 +449,29 @@ var TagRail = class extends import_view2.WidgetType {
       win.addEventListener("resize", reposition);
       doc.addEventListener("scroll", reposition, true);
     });
+    let disposed = false;
+    let lastMeasured = -1;
+    let measuredAnchor = null;
     const fit = () => {
-      if (!root.isConnected) return;
+      if (disposed || !root.isConnected) return;
+      if (this.measurement) {
+        const line = root.closest(".cm-line");
+        if (line !== measuredAnchor) {
+          if (measuredAnchor) observer.unobserve(measuredAnchor);
+          if (line) observer.observe(line);
+          measuredAnchor = line;
+        }
+      }
       chips.forEach((chip) => {
         chip.hidden = false;
       });
       more.hidden = false;
       more.textContent = `+${this.tags.length}`;
-      const count = visibleCount(
-        chips.map((c) => c.getBoundingClientRect().width),
-        root.getBoundingClientRect().width,
-        more.getBoundingClientRect().width
-      );
+      const previousWidth = root.style.width;
+      if (this.measurement) root.style.width = "var(--margin-tags-limit)";
+      const cap = root.getBoundingClientRect().width;
+      const chipWidths = chips.map((c) => c.getBoundingClientRect().width);
+      const count = visibleCount(chipWidths, cap, more.getBoundingClientRect().width);
       chips.forEach((chip, i) => {
         chip.hidden = i >= count;
       });
@@ -421,6 +482,20 @@ var TagRail = class extends import_view2.WidgetType {
       more.textContent = `+${hidden.length}`;
       more.setAttribute("aria-label", `Show ${hidden.length} more tags`);
       more.title = hidden.join(", ");
+      if (this.measurement) {
+        const shown = count + (hidden.length ? 1 : 0);
+        const used = chipWidths.slice(0, count).reduce((sum, width) => sum + width, 0) + (hidden.length ? more.getBoundingClientRect().width : 0) + Math.max(0, shown - 1) * 4;
+        const fitted = Math.ceil(Math.min(cap, used));
+        root.style.width = previousWidth;
+        if (fitted !== lastMeasured) {
+          lastMeasured = fitted;
+          win.queueMicrotask(() => {
+            if (!disposed && root.isConnected && lastMeasured === fitted) {
+              view.dispatch({ effects: measuredLane.of({ ...this.measurement, width: fitted }) });
+            }
+          });
+        }
+      }
       reposition();
     };
     let frame = 0;
@@ -430,12 +505,23 @@ var TagRail = class extends import_view2.WidgetType {
     };
     const observer = new win.ResizeObserver(schedule);
     observer.observe(root);
+    if (this.measurement) {
+      observer.observe(view.contentDOM);
+    }
     chips.forEach((chip) => observer.observe(chip));
     schedule();
-    mounts.set(root, { observer, close, cancel: () => win.cancelAnimationFrame(frame) });
+    mounts.set(root, { observer, close, cancel: () => {
+      disposed = true;
+      win.cancelAnimationFrame(frame);
+    } });
     return root;
   }
-  applyPadding(element) {
+  applyAppearance(element) {
+    element.style.setProperty("--margin-tags-font-family", this.typography.tagFontFamily || "var(--font-interface)");
+    element.style.setProperty("--margin-tags-font-size", tagFontSizeCss(this.typography.tagFontSize, this.typography.tagAutoPercent));
+    element.style.setProperty("--margin-tags-font-weight", String(this.typography.tagFontWeight));
+    element.style.setProperty("--margin-tags-font-style", this.typography.tagItalic ? "italic" : "normal");
+    element.style.setProperty("--margin-tags-text-decoration", this.typography.tagUnderline ? "underline" : "none");
     element.style.setProperty("--margin-tags-padding-x", `${this.paddingX}px`);
     element.style.setProperty("--margin-tags-padding-y", `${this.paddingY}px`);
   }
@@ -450,6 +536,40 @@ var TagRail = class extends import_view2.WidgetType {
     mounts.delete(dom);
   }
 };
+
+// src/number-control.ts
+function bindNumberControl(slider, input, min, max, initial, save) {
+  let value = initial;
+  input.type = "number";
+  input.min = String(min);
+  input.max = String(max);
+  input.step = "1";
+  const render = () => {
+    slider.value = input.value = String(value);
+  };
+  const commit = (raw) => {
+    const parsed = raw.trim() === "" ? NaN : Number(raw);
+    const next = Number.isFinite(parsed) ? Math.max(min, Math.min(max, Math.round(parsed))) : value;
+    const changed = next !== value;
+    value = next;
+    render();
+    if (changed) save(value);
+  };
+  render();
+  slider.addEventListener("input", () => commit(slider.value));
+  input.addEventListener("change", () => commit(input.value));
+  input.addEventListener("blur", () => commit(input.value));
+  input.addEventListener("keydown", (event) => {
+    if (event.key === "Enter") {
+      event.preventDefault();
+      commit(input.value);
+    }
+    if (event.key === "Escape") {
+      event.preventDefault();
+      render();
+    }
+  });
+}
 
 // src/main.ts
 var MarginTagsPlugin = class extends import_obsidian.Plugin {
@@ -467,12 +587,19 @@ var MarginTagsPlugin = class extends import_obsidian.Plugin {
           return plugin.settings;
         },
         isLivePreview: (state) => state.field(import_obsidian.editorLivePreviewField, false) === true,
-        widget: (tags, width, settings) => new TagRail(tags, width, {
+        widget: (tags, width, settings, measurement) => new TagRail(tags, width, {
           search: (tag, newPane) => {
             void plugin.openTag(tag, newPane);
           },
           href: (tag) => `obsidian://search?vault=${encodeURIComponent(plugin.app.vault.getName())}&query=${encodeURIComponent(`tag:${tag}`)}`
-        }, settings.tagPaddingX, settings.tagPaddingY)
+        }, settings.tagPaddingX, settings.tagPaddingY, {
+          tagFontFamily: settings.tagFontFamily,
+          tagFontSize: settings.tagFontSize,
+          tagAutoPercent: settings.tagAutoPercent,
+          tagFontWeight: settings.tagFontWeight,
+          tagItalic: settings.tagItalic,
+          tagUnderline: settings.tagUnderline
+        }, measurement)
       }),
       createMarginLayout(() => plugin.settings.marginGap),
       import_view3.ViewPlugin.fromClass(class {
@@ -529,7 +656,11 @@ var MarginTagsSettings = class extends import_obsidian.PluginSettingTab {
       this.plugin.settings.enabled = enabled;
       await this.plugin.applySettings();
     }));
-    new import_obsidian.Setting(this.containerEl).setName("Show tags inline while editing").setDesc("On: reveal tags inline when the cursor or selection is in their line or paragraph. Off: keep them in the margin. You can edit tag text in Source mode. Tags still stay inline if there is no room for a margin.").addToggle((toggle) => toggle.setValue(this.plugin.settings.showInlineWhileEditing).onChange(async (showInlineWhileEditing) => {
+    new import_obsidian.Setting(this.containerEl).setName("Place tags outside text area").setDesc("On: use the existing margin outside the text column. Off: place tags inside the right edge, reserving space so they do not overlap text. Inside placement also works when no outside margin is available.").addToggle((toggle) => toggle.setValue(this.plugin.settings.tagsOutside).onChange(async (value) => {
+      this.plugin.settings.tagsOutside = value;
+      await this.plugin.applySettings();
+    }));
+    new import_obsidian.Setting(this.containerEl).setName("Show tags inline while editing").setDesc("On: reveal tags inline when the cursor or selection is in their line or paragraph. Off: keep them in the margin. You can edit tag text in Source mode. In outside placement, tags stay inline if there is no room for a margin.").addToggle((toggle) => toggle.setValue(this.plugin.settings.showInlineWhileEditing).onChange(async (showInlineWhileEditing) => {
       this.plugin.settings.showInlineWhileEditing = showInlineWhileEditing;
       await this.plugin.applySettings();
     }));
@@ -545,21 +676,90 @@ var MarginTagsSettings = class extends import_obsidian.PluginSettingTab {
       this.plugin.settings.priority = priority === "right-to-left" ? "right-to-left" : "left-to-right";
       await this.plugin.applySettings();
     }));
-    new import_obsidian.Setting(this.containerEl).setName("Tag horizontal padding").setDesc("Space inside each margin tag on the left and right, in pixels. Default: 7. Larger padding fits fewer tags before +N.").addSlider((slider) => slider.setLimits(0, 24, 1).setValue(this.plugin.settings.tagPaddingX).setDynamicTooltip().onChange(async (value) => {
-      this.plugin.settings.tagPaddingX = value;
+    new import_obsidian.Setting(this.containerEl).setName("Tag font family").setDesc("Use a font installed on your device, such as Georgia or Arial. A comma-separated fallback list is supported. Leave blank for Obsidian\u2019s interface font.").addText((text) => text.setPlaceholder("Default interface font").setValue(this.plugin.settings.tagFontFamily).onChange(async (value) => {
+      this.plugin.settings.tagFontFamily = value;
       await this.plugin.applySettings();
     }));
-    new import_obsidian.Setting(this.containerEl).setName("Tag vertical padding").setDesc("Space inside each margin tag above and below the label, in pixels. Default: 1. Larger padding increases the tagged line\u2019s minimum height to avoid overlap.").addSlider((slider) => slider.setLimits(0, 12, 1).setValue(this.plugin.settings.tagPaddingY).setDynamicTooltip().onChange(async (value) => {
-      this.plugin.settings.tagPaddingY = value;
+    new import_obsidian.Setting(this.containerEl).setName("Tag font size").setDesc("Choose a size in pixels, or Automatic to scale with the note font using the percentage below. Larger tags may move into +N sooner.").addDropdown((dropdown) => {
+      dropdown.addOption("0", "Automatic (use percentage below)");
+      for (let size = 8; size <= 32; size++) dropdown.addOption(String(size), `${size} px`);
+      dropdown.setValue(String(this.plugin.settings.tagFontSize)).onChange(async (value) => {
+        this.plugin.settings.tagFontSize = Number(value);
+        await this.plugin.applySettings();
+      });
+    });
+    this.numberSetting(
+      "Automatic font size percentage",
+      "Tag size as a percentage of the note font: 100% matches it, 78% is the default. Applies only when Tag font size is Automatic.",
+      "tagAutoPercent",
+      25,
+      200,
+      "%"
+    );
+    new import_obsidian.Setting(this.containerEl).setName("Tag font weight").setDesc("Choose Regular, Bold, or another weight. The available appearance depends on the selected font.").addDropdown((dropdown) => {
+      const labels = ["Thin", "Extra light", "Light", "Regular", "Medium", "Semibold", "Bold", "Extra bold", "Black"];
+      labels.forEach((label, i) => dropdown.addOption(String((i + 1) * 100), `${label} (${(i + 1) * 100})`));
+      dropdown.setValue(String(this.plugin.settings.tagFontWeight)).onChange(async (value) => {
+        this.plugin.settings.tagFontWeight = Number(value);
+        await this.plugin.applySettings();
+      });
+    });
+    new import_obsidian.Setting(this.containerEl).setName("Italic tags").addToggle((toggle) => toggle.setValue(this.plugin.settings.tagItalic).onChange(async (value) => {
+      this.plugin.settings.tagItalic = value;
       await this.plugin.applySettings();
     }));
-    new import_obsidian.Setting(this.containerEl).setName("Text-to-margin gap").setDesc("Space between the text column and the margin tags, in pixels. Default: 12. This uses outside margin space without narrowing the text.").addSlider((slider) => slider.setLimits(0, 80, 1).setValue(this.plugin.settings.marginGap).setDynamicTooltip().onChange(async (value) => {
-      this.plugin.settings.marginGap = value;
+    new import_obsidian.Setting(this.containerEl).setName("Underline tags").addToggle((toggle) => toggle.setValue(this.plugin.settings.tagUnderline).onChange(async (value) => {
+      this.plugin.settings.tagUnderline = value;
       await this.plugin.applySettings();
     }));
-    new import_obsidian.Setting(this.containerEl).setName("Maximum margin width").setDesc("Maximum width outside the text column. Uses existing right-hand space; tags stay inline when that space is too narrow. Readable line length can provide more margin in wide panes.").addSlider((slider) => slider.setLimits(80, 360, 10).setValue(this.plugin.settings.width).setDynamicTooltip().onChange(async (width) => {
-      this.plugin.settings.width = width;
-      await this.plugin.applySettings();
-    }));
+    this.numberSetting(
+      "Tag horizontal padding",
+      "Space inside each margin tag on the left and right. Default: 7 px. Larger padding fits fewer tags before +N.",
+      "tagPaddingX",
+      0,
+      24,
+      "px"
+    );
+    this.numberSetting(
+      "Tag vertical padding",
+      "Space inside each margin tag above and below the label. Default: 1 px. Larger padding increases the tagged line\u2019s minimum height to avoid overlap.",
+      "tagPaddingY",
+      0,
+      12,
+      "px"
+    );
+    this.numberSetting(
+      "Distance from text",
+      "Move tags closer to or farther from the text column. Lower values bring them closer; 0 removes the extra gap. Default: 12 px. Inside placement caps the gap at 10% of the text column.",
+      "marginGap",
+      0,
+      80,
+      "px"
+    );
+    this.numberSetting(
+      "Maximum margin width",
+      "Maximum tag lane width. Outside: limited by spare margin space. Inside: each group uses only the width its displayed tags need, up to this maximum and 38% of the text column.",
+      "width",
+      80,
+      360,
+      "px"
+    );
+  }
+  numberSetting(name, description, key, min, max, unit) {
+    const setting = new import_obsidian.Setting(this.containerEl).setName(name).setDesc(`${description} Drag the slider, or type a number and press Enter or leave the field to apply.`);
+    setting.controlEl.classList.add("margin-tags-number-control");
+    setting.addSlider((slider) => {
+      slider.setLimits(min, max, 1).setValue(this.plugin.settings[key]).setDynamicTooltip();
+      slider.sliderEl.setAttribute("aria-label", `${name} (${unit})`);
+      setting.addText((text) => {
+        text.inputEl.classList.add("margin-tags-number-input");
+        text.inputEl.setAttribute("aria-label", `${name} (${unit}), exact value`);
+        bindNumberControl(slider.sliderEl, text.inputEl, min, max, this.plugin.settings[key], (value) => {
+          this.plugin.settings[key] = value;
+          void this.plugin.applySettings();
+        });
+      });
+    });
+    setting.controlEl.createSpan({ text: unit, cls: "margin-tags-number-unit" });
   }
 };

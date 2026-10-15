@@ -9,7 +9,7 @@ const lp = StateField.define({ create: () => true, update: (v, tr) => tr.effects
 const clicks: string[] = [];
 const source = `Editing this paragraph keeps its tags inline. #editing\n\nPrepare the launch notes and send them for review. #product #design #release #team/europe #follow-up #long-tag-that-needs-to-be-folded\n\nThis paragraph spans two source lines. #research\nIts tags share the same margin and editing scope. #writing\n\n- First task #todo #planning\n- Second task #done\n\nInline code stays untouched: \`#not-a-tag\`.\n\n#tags-only #another #third #fourth\n\nLast paragraph.`;
 const field = createMarginField({ settings: DEFAULTS, isLivePreview: s => s.field(lp),
-  widget: (tags, width) => new TagRail(tags, width, { href: t => `#search-${t}`, search: t => { clicks.push(t); } }) });
+  widget: (tags, width, settings, measurement) => new TagRail(tags, width, { href: t => `#search-${t}`, search: t => { clicks.push(t); } }, settings.tagPaddingX, settings.tagPaddingY, settings, measurement) });
 const view = new EditorView({ parent: document.querySelector('#editor')!, state: EditorState.create({
   doc: source, extensions: [testLanguage, lp, field, marginLayout, EditorView.lineWrapping]
 }) });
