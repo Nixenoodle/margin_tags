@@ -1,14 +1,16 @@
 /* Scoped to plugin decorations. Active blocks receive no layout override. */
 .markdown-source-view.mod-cm6 .cm-line.margin-tags-line {
   position: relative;
+  /* Reserve enough height for padded chips, including on adjacent tagged lines. */
+  min-height: max(1lh, calc(var(--font-text-size, 16px) * 1.131 + var(--margin-tags-padding-y, 1px) * 2 + 2px));
 }
 .margin-tags-rail {
   position: absolute;
-  left: calc(100% + 12px);
+  left: calc(100% + var(--margin-tags-gap, 12px));
   top: 0;
   width: var(--margin-tags-width, 200px);
-  height: 1lh;
-  min-height: 1.5em;
+  height: auto;
+  min-height: 1lh;
   display: flex;
   align-items: center;
   justify-content: flex-start;
@@ -30,7 +32,7 @@
   box-sizing: border-box;
   font-size: 0.78em;
   line-height: 1.45;
-  padding: 1px 7px;
+  padding: var(--margin-tags-padding-y, 1px) var(--margin-tags-padding-x, 7px);
   border-radius: var(--tag-radius, 12px);
   background: var(--tag-background, var(--background-secondary));
   color: var(--tag-color, var(--text-accent));
