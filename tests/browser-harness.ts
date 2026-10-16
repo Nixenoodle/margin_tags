@@ -19,4 +19,5 @@ Object.assign(window, { harness: { view, source, clicks,
   reverse: () => view.dispatch({ effects: configure.of({ ...DEFAULTS, priority: 'right-to-left' }) }),
   sourceMode: () => view.dispatch({ effects: toggleLP.of(false) }),
   enable: () => view.dispatch({ effects: [configure.of(DEFAULTS), toggleLP.of(true)] }),
+  inside: () => view.dispatch({ effects: [configure.of({ ...DEFAULTS, tagsOutside: false, showInlineWhileEditing: false }), toggleLP.of(true)] }),
 } });

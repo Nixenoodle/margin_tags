@@ -61,6 +61,7 @@ export class TagRail extends WidgetType {
     const more = doc.createElement('button');
     more.type = 'button';
     more.className = 'margin-tags-more';
+    more.hidden = true;
     more.setAttribute('aria-haspopup', 'dialog');
     more.setAttribute('aria-expanded', 'false');
     root.append(more);
@@ -195,7 +196,10 @@ export class TagRail extends WidgetType {
     }
     // Also observe chip sizes so theme/font changes update overflow.
     chips.forEach(chip => observer.observe(chip));
-    schedule();
+    // CodeMirror mounts the DOM synchronously, including during animation-frame
+    // updates. Size new rails in a microtask so no unmeasured lane or empty
+    // overflow button is painted while waiting for the next animation frame.
+    win.queueMicrotask(fit);
     mounts.set(root, { observer, close, cancel: () => { disposed = true; win.cancelAnimationFrame(frame); } });
     return root;
   }

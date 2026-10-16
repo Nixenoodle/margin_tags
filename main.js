@@ -191,6 +191,15 @@ function readTags(state) {
   }
   return merged.map((r) => ({ ...r, text: state.sliceDoc(r.from, r.to) })).filter((r) => r.text.startsWith("#") && r.text.length > 1 && !/\s/.test(r.text));
 }
+function sameBlocks(a, b) {
+  return a === b || a.length === b.length && a.every((block, i) => {
+    const other = b[i];
+    return block.from === other.from && block.to === other.to && block.firstLine === other.firstLine && block.lastLine === other.lastLine && block.tags.length === other.tags.length && block.tags.every((tag, j) => {
+      const otherTag = other.tags[j];
+      return tag.from === otherTag.from && tag.to === otherTag.to && tag.text === otherTag.text;
+    });
+  });
+}
 function createMarginField(host) {
   function decorate(state, blocks, settings, space, widths, revision) {
     if (!settings.enabled || !host.isLivePreview(state) || settings.tagsOutside && space < 64) return import_view.Decoration.none;
@@ -251,7 +260,7 @@ function createMarginField(host) {
       }
       const reparse = tr.docChanged || (0, import_language.syntaxTree)(tr.state) !== (0, import_language.syntaxTree)(tr.startState) || settings.mode !== value.settings.mode;
       const blocks = reparse ? collectBlocks(tr.state.doc, readTags(tr.state), settings.mode) : value.blocks;
-      const reset = reparse || settings !== value.settings;
+      const reset = tr.docChanged || settings !== value.settings || !sameBlocks(blocks, value.blocks);
       const revision = reset ? value.revision + 1 : value.revision;
       let widths = reset ? /* @__PURE__ */ new Map() : value.widths;
       for (const effect of tr.effects) {
@@ -368,6 +377,7 @@ var TagRail = class extends import_view2.WidgetType {
     const more = doc.createElement("button");
     more.type = "button";
     more.className = "margin-tags-more";
+    more.hidden = true;
     more.setAttribute("aria-haspopup", "dialog");
     more.setAttribute("aria-expanded", "false");
     root.append(more);
@@ -509,7 +519,7 @@ var TagRail = class extends import_view2.WidgetType {
       observer.observe(view.contentDOM);
     }
     chips.forEach((chip) => observer.observe(chip));
-    schedule();
+    win.queueMicrotask(fit);
     mounts.set(root, { observer, close, cancel: () => {
       disposed = true;
       win.cancelAnimationFrame(frame);

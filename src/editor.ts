@@ -34,6 +34,18 @@ export function readTags(state: EditorState): Tag[] {
     .filter(r => r.text.startsWith('#') && r.text.length > 1 && !/\s/.test(r.text));
 }
 
+function sameBlocks(a: Block[], b: Block[]): boolean {
+  return a === b || a.length === b.length && a.every((block, i) => {
+    const other = b[i];
+    return block.from === other.from && block.to === other.to
+      && block.firstLine === other.firstLine && block.lastLine === other.lastLine
+      && block.tags.length === other.tags.length && block.tags.every((tag, j) => {
+        const otherTag = other.tags[j];
+        return tag.from === otherTag.from && tag.to === otherTag.to && tag.text === otherTag.text;
+      });
+  });
+}
+
 export function createMarginField(host: Host) {
   function decorate(state: EditorState, blocks: Block[], settings: Settings, space: number, widths: Map<number, number>, revision: number): DecorationSet {
     if (!settings.enabled || !host.isLivePreview(state) || (settings.tagsOutside && space < 64)) return Decoration.none;
@@ -93,7 +105,9 @@ export function createMarginField(host: Host) {
       const reparse = tr.docChanged || syntaxTree(tr.state) !== syntaxTree(tr.startState)
         || settings.mode !== value.settings.mode;
       const blocks = reparse ? collectBlocks(tr.state.doc, readTags(tr.state), settings.mode) : value.blocks;
-      const reset = reparse || settings !== value.settings;
+      // Live Preview can refresh its syntax tree during cursor movement without
+      // changing the tags. Keep compact widths and widget identities in that case.
+      const reset = tr.docChanged || settings !== value.settings || !sameBlocks(blocks, value.blocks);
       const revision = reset ? value.revision + 1 : value.revision;
       let widths = reset ? new Map<number, number>() : value.widths;
       for (const effect of tr.effects) {

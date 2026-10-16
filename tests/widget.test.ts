@@ -127,3 +127,34 @@ test('Inside rails measure actual used width against the cap and expand again af
   widget.destroy(root);
   win.close();
 });
+
+test('New and remounted rails fit before the first animation frame can paint them', async () => {
+  const dom = new JSDOM('<!doctype html><body><div class="cm-line"></div></body>', { pretendToBeVisual: true });
+  const win = dom.window;
+  win.ResizeObserver = class { observe() {} unobserve() {} disconnect() {} } as any;
+  // Do not run animation frames: initial sizing must finish before that paint.
+  win.requestAnimationFrame = () => 1;
+  let compact = 190;
+  win.HTMLElement.prototype.getBoundingClientRect = function () {
+    const width = this.classList.contains('margin-tags-rail')
+      ? this.style.width === 'var(--margin-tags-limit)' ? 190 : compact
+      : this.tagName === 'A' ? 50 : 30;
+    return { width, height: 24, left: 200, right: 200 + width, top: 20, bottom: 44, x: 200, y: 20, toJSON() {} };
+  };
+  const view: any = { dom: win.document.body, contentDOM: win.document.body,
+    dispatch: (tr: any) => { compact = tr.effects.value.width; } };
+  for (let revision = 0; revision < 3; revision++) {
+    compact = 190;
+    const widget = new TagRail(['#flashcard', '#word'], 190, { href: t => t, search: () => {} },
+      7, 1, DEFAULT_TYPOGRAPHY, { blockFrom: 0, revision });
+    const root = widget.toDOM(view);
+    win.document.querySelector('.cm-line')!.append(root);
+    await Promise.resolve();
+    await Promise.resolve();
+    assert.equal(compact, 104, 'The initial wide lane must shrink before the browser paints');
+    assert.equal(root.querySelector<HTMLButtonElement>('button')!.hidden, true, 'No empty overflow button flashes');
+    widget.destroy(root);
+    root.remove();
+  }
+  win.close();
+});

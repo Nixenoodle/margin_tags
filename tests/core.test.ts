@@ -1,6 +1,7 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { EditorState, EditorSelection, StateField, StateEffect, Text } from '@codemirror/state';
+import { EditorState, EditorSelection, StateField, StateEffect, Text, Compartment } from '@codemirror/state';
+import { Language, StreamLanguage, syntaxTree } from '@codemirror/language';
 import { WidgetType } from '@codemirror/view';
 import { createMarginField, readTags, configure, marginSpace, measuredLane } from '../src/editor';
 import { collectBlocks, touchesSelection, visibleCount, sanitizeSettings, DEFAULTS, prioritizeTags, availableMargin, tagFontSizeCss } from '../src/model';
@@ -263,6 +264,61 @@ test('Inside lanes shrink per paragraph and share the measured width across cont
   assert.ok(styles[0].includes('--margin-tags-width:min(70px, min(190px, 38%))'));
   assert.equal(styles[1], styles[0]);
   assert.ok(styles[2].includes('--margin-tags-width:min(125px, min(190px, 38%))'));
+  assert.equal(state.doc.toString(), source);
+});
+
+test('Equivalent parser refreshes preserve compact lanes while moving the cursor up and down', () => {
+  const source = 'Start\n\nFirst #one\nContinuation\n\nSecond #two';
+  for (const showInlineWhileEditing of [false, true]) {
+    const language = new Compartment();
+    const field = createMarginField({ settings: { ...DEFAULTS, tagsOutside: false, showInlineWhileEditing },
+      isLivePreview: () => true, widget: () => new Dummy() });
+    let state = EditorState.create({ doc: source, extensions: [language.of(testLanguage), field] });
+    const revision = state.field(field).revision;
+    const first = source.indexOf('First'), second = source.indexOf('Second');
+    state = state.update({ effects: [
+      measuredLane.of({ blockFrom: first, revision, width: 55 }),
+      measuredLane.of({ blockFrom: second, revision, width: 75 }),
+    ] }).state;
+    const measured = state.field(field).widths;
+    const blocks = state.field(field).blocks;
+    for (const anchor of [first, source.indexOf('Continuation'), second, first, 0]) {
+      const previousTree = syntaxTree(state);
+      // A fresh language instance forces a new tree for identical Markdown.
+      state = state.update({ selection: { anchor }, effects:
+        language.reconfigure(new Language(testLanguage.data, testLanguage.parser)) }).state;
+      assert.notEqual(syntaxTree(state), previousTree, 'The parser actually refreshed');
+      const value = state.field(field);
+      assert.deepEqual(value.blocks, blocks);
+      assert.equal(value.revision, revision, 'Unchanged tags keep the widget measurement identity');
+      assert.equal(value.widths, measured, 'Cursor movement never discards the compact widths');
+      value.decorations.between(0, source.length, (from, _to, decoration) => {
+        if (!decoration.spec.attributes) return;
+        const width = from >= second ? 75 : 55;
+        assert.ok(decoration.spec.attributes.style.includes(`--margin-tags-width:min(${width}px,`));
+      });
+      assert.equal(state.doc.toString(), source);
+    }
+  }
+});
+
+test('Parser refreshes that change recognized tags still invalidate measurements', () => {
+  const source = 'Start\n\nText #tag';
+  const language = new Compartment();
+  const field = createMarginField({ settings: { ...DEFAULTS, tagsOutside: false },
+    isLivePreview: () => true, widget: () => new Dummy() });
+  let state = EditorState.create({ doc: source, extensions: [language.of(testLanguage), field] });
+  const old = { blockFrom: source.indexOf('Text'), revision: state.field(field).revision, width: 55 };
+  state = state.update({ effects: measuredLane.of(old) }).state;
+  const noTags = StreamLanguage.define({ token(stream) { stream.skipToEnd(); return null; } });
+  state = state.update({ effects: language.reconfigure(noTags) }).state;
+  assert.equal(state.field(field).blocks.length, 0);
+  assert.equal(state.field(field).widths.size, 0);
+  assert.equal(state.field(field).revision, old.revision + 1);
+  state = state.update({ effects: language.reconfigure(testLanguage) }).state;
+  state = state.update({ effects: measuredLane.of(old) }).state;
+  assert.equal(state.field(field).blocks.length, 1);
+  assert.equal(state.field(field).widths.size, 0, 'Old reports cannot restore stale widths');
   assert.equal(state.doc.toString(), source);
 });
 
